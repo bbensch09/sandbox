@@ -1,0 +1,73 @@
+<h1 class="text-center">All Your Matches</h1>
+
+<div class="text-center header-box">
+  <% if @matches.length == 0 %>
+  Sorry, you don't have any matches yet!
+  <% else %>
+  Congrats, you have <%= @matches.length %> matches!
+  <% end %>
+</div>
+
+
+
+<% @matches.each_with_index do |match,index| %>
+<% matched_user = get_matched_user(match, current_user) %>
+<% message = Message.where(match_id: match.id).last %>
+
+<div class="match-row cl-b">
+  <div class="profile-container">
+    <a href=<%="/users/#{matched_user.id}"%> >
+      <img class="img-circle" src="<%= matched_user.profile_picture_url %>" alt="profile"/>
+    </a>
+  </div>
+    <a class="btn btn-default btn-blank link-area" role="button" href=<%="/matches/#{match.id}/chat"%> >
+        <% unread_messages = current_user.unread_messages_in_match(match) %>
+          <% if unread_messages > 0 %>
+            <span class="unread-badge badge"><%= unread_messages %></span>
+        <% end %>
+    <div class="name-and-text">
+      <div class="">
+        <p class="last-message name"><%= matched_user.first_name %></p>
+        <% if !message.nil? %>
+          <% if message.unread %>
+          <p class="last-message-unread">
+            <% if message.message_text.length <=22 %>
+              <%= message.message_text %>
+              <% else %>
+              <%= message.message_text[0..22] %>...
+            <% end %>
+          </p>
+          <% else %>
+          <p class="last-message">
+            <% if message.message_text.length <=22 %>
+              <%= message.message_text %>
+              <% else %>
+              <%= message.message_text[0..22] %>...
+            <% end %>
+          </p>
+          <% end %>
+        <% end %>
+      </p>
+      </div>
+    </div>
+  </a>
+</div>
+
+<% end %>
+
+<% if @matches.count == 0 %>
+
+<div class="empty-matches">
+  <p class="prompt-message">
+    Potential matches are determined based on location and your shared interests. To increase your odds, add more sports and keep swiping.
+  </p>
+  <a href="/profile" class="link-area" role="button" >
+    <div class="matches_add_sports_helper">
+      <span class="fa fa-plus-circle override-matches"></span>
+      <span class="glyphicon glyphicon-hand-left override-matches"></span>
+      <span class="link-area-text"> Add more sports!</span>
+    </div>
+  </a>
+</div>
+
+<% end %>

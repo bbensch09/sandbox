@@ -1,0 +1,62 @@
+.input {
+  width: 100%;
+  max-width: 500px;
+  height: 50px;
+  font-size: 1.5em;
+  border: 1px solid #9A9C9F;
+}
+
+.sport_options {
+  width: 100%;
+  max-width: 500px;
+  line-height: 1.25em;
+  border-bottom: 1px solid black !important;
+  border-radius: 0px !important;
+}
+
+.sport_item {
+  margin-top: 5px;
+  font-size: 1.25em;
+}
+
+.fa-plus-circle {
+  color: #72C4B9 !important;
+  margin-left: 0 !important;
+  margin-top: 0 !important;
+}
+
+.sport-highlight {
+  width: 100%;
+  background-color: rgba(0,0,0,.5);
+  color: white;
+}
+
+.flex {
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#beginner {
+  background-color: #0B800D;
+  border: 2px solid #9A9C9F;
+}
+
+#intermediate {
+  background-color: #4057D6;
+  border: 2px solid #9A9C9F;
+  margin-left: 3%;
+  font-size: .9em;
+}
+
+#advanced {
+  background-color: #0F0F0D;
+  border: 2px solid #9A9C9F;
+}
+
+.skill-header {
+  margin-bottom: 3px !important;
+  margin-top: 3px !important;
+  text-align: center;
+}
