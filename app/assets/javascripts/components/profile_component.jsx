@@ -1,5 +1,5 @@
 
-var ProfileTest = React.createClass({
+var ProfileComponent = React.createClass({
   getInitialState: function() {
     return {save_needed: false,
             bio: this.props.user.bio,
@@ -25,8 +25,8 @@ var ProfileTest = React.createClass({
   },
   updateBio: function(new_bio){
     this.setState({bio: new_bio});
-    console.log('BIO' + new_bio)
-    console.log('BIOSTATE' + this.state.bio)
+    console.log('BIO_NEW: ' + new_bio)
+    console.log('BIO_PREV_STATE: ' + this.state.bio)
     this.updateSaveNeeded()
   },
   updateName: function(first_name){
@@ -42,7 +42,7 @@ var ProfileTest = React.createClass({
       this.updateButtonColor();
       $('#save_button').prop("disabled", false);
       $('#save_button').addClass('can_save');
-      console.log('getting there');
+      console.log('updateSaveNeeded');
       this.setState({save_needed: true});
     }
   },
@@ -344,7 +344,7 @@ var SaveButton = React.createClass({
 
     request.done(function(data) {
         console.log(data);
-        console.log("successfully saved via ajax");
+        console.log("successfully saved via ajax quickSave");
     });
   },
 
@@ -359,7 +359,7 @@ var SaveButton = React.createClass({
 
     request.done(function(data) {
         console.log(data);
-        console.log("successfully saved via ajax");
+        console.log("successfully saved via ajax saveForm");
         if(firstVisit) {
           location.href = '/feed';
         } else {
@@ -368,6 +368,3 @@ var SaveButton = React.createClass({
     });
   },
 });
-
-
-

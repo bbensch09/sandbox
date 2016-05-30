@@ -5,6 +5,7 @@ $(document).on('submit', '#update_bio',function(e) {
   var text = $('textarea').val()
   console.log(text)
   console.log(path)
+  console.log('ajax request from uers.js file to update bio.');
   var request = $.ajax({
                   url: path,
                   type: "PUT",
