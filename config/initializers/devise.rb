@@ -5,7 +5,7 @@ Dotenv.load
 # Many of these configuration options can be set straight in your model.
 Devise.setup do |config|
 
-  config.omniauth :facebook, ENV['API_ID'], ENV['APP_SECRET'],
+  config.omniauth :facebook, ENV['FB_API_ID'], ENV['FB_APP_SECRET'],
       scope: "email,user_location,public_profile,user_birthday,user_photos", image_size: "large", info_fields: 'id,first_name,last_name,about,birthday,age_range,gender,email,location'
   # The secret key used by Devise. Devise uses this key to generate
   # random tokens. Changing this key will render invalid all existing
