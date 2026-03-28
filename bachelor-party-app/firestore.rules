@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Any authenticated user can read/write games and responses
+    match /games/{gameId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && (
+        // Creator can update anything (close game, reveal answer)
+        resource.data.createdBy.uid == request.auth.uid ||
+        // Others can only update non-sensitive fields (not allowed via this rule — updates go through responses)
+        false
+      );
+      allow delete: if request.auth != null && resource.data.createdBy.uid == request.auth.uid;
+    }
+    match /responses/{gameId}/submissions/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
