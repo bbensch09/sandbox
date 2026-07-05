@@ -4,8 +4,8 @@
 create table if not exists settings (
   id text primary key default 'singleton',
   elevenlabs_api_key text,
-  elevenlabs_voice_id text default 'NFG5qt843uXKj4pFvR7C',
-  elevenlabs_voice_name text default 'Adam Stone - Smooth, Deep and Relaxed',
+  elevenlabs_voice_id text default 'pNInz6obpgDQGcFmaJgB',
+  elevenlabs_voice_name text default 'Adam (ElevenLabs built-in)',
   updated_at timestamptz default now()
 );
 

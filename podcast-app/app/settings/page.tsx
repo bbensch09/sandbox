@@ -40,9 +40,9 @@ export default function SettingsPage() {
     setError('');
     try {
       const res = await fetch('/api/voices');
-      if (!res.ok) throw new Error('Could not load voices — check your API key');
-      const data: Voice[] = await res.json();
-      setVoices(data.sort((a, b) => a.name.localeCompare(b.name)));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status} loading voices`);
+      setVoices((data as Voice[]).sort((a, b) => a.name.localeCompare(b.name)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load voices');
     } finally {
