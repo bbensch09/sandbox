@@ -2,87 +2,160 @@ import { inngest } from './client';
 import { createServerSupabase } from '@/lib/supabase-server';
 import { extractArticle } from '@/lib/extraction';
 import { generateSpeech, chunkText, preprocessForTTS } from '@/lib/elevenlabs';
+import { generateSpeechOpenAI } from '@/lib/openai-tts';
 
-export const processEpisode = inngest.createFunction(
+type FailureEvent = { data?: { event?: { data?: { episodeId?: string } } } };
+
+async function markFailed(episodeId: string, message: string) {
+  const supabase = createServerSupabase();
+  await supabase
+    .from('episodes')
+    .update({ status: 'failed', error_message: message, updated_at: new Date().toISOString() })
+    .eq('id', episodeId);
+}
+
+// ── Step 1: Extract article content ────────────────────────────────────────
+export const extractEpisode = inngest.createFunction(
   {
-    id: 'process-episode',
-    name: 'Process Episode',
+    id: 'extract-episode',
+    name: 'Extract Episode',
     retries: 2,
-    triggers: [{ event: 'episode/process' }],
-    onFailure: async ({ error, event }: { error: Error; event: { data: { data: { episodeId: string } } } }) => {
-      const supabase = createServerSupabase();
-      const episodeId = event?.data?.data?.episodeId;
-      if (!episodeId) return;
-      await supabase
-        .from('episodes')
-        .update({
-          status: 'failed',
-          error_message: error.message,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', episodeId);
+    triggers: [{ event: 'episode/extract' }],
+    onFailure: async ({ error, event }: { error: Error; event: FailureEvent }) => {
+      const episodeId = event?.data?.event?.data?.episodeId;
+      if (episodeId) await markFailed(episodeId, error.message);
     },
   },
   async ({ event, step }: { event: { data: { episodeId: string } }; step: import('inngest').GetStepTools<typeof inngest> }) => {
     const { episodeId } = event.data;
     const supabase = createServerSupabase();
 
-    // ── 1. Fetch episode + settings ──────────────────────────────────────
+    // Fetch episode
+    const episode = await step.run('fetch-episode', async () => {
+      const { data, error } = await supabase
+        .from('episodes')
+        .select('*')
+        .eq('id', episodeId)
+        .single();
+      if (error) throw new Error(`Episode not found: ${error.message}`);
+      return data;
+    });
+
+    // Mark as extracting
+    await step.run('mark-extracting', async () => {
+      await supabase
+        .from('episodes')
+        .update({ status: 'extracting', updated_at: new Date().toISOString() })
+        .eq('id', episodeId);
+    });
+
+    // Extract content (or use existing pasted content)
+    await step.run('extract-content', async () => {
+      let content: string = episode.content as string;
+      let title: string = episode.title as string;
+
+      if (!content) {
+        if (!episode.source_url) throw new Error('No content or URL to extract from');
+        const extracted = await extractArticle(episode.source_url as string);
+        content = extracted.content;
+        if (title === 'Untitled') title = extracted.title;
+      }
+
+      const cleanText = preprocessForTTS(content);
+      const characterCount = cleanText.length;
+
+      await supabase
+        .from('episodes')
+        .update({
+          title,
+          content,
+          character_count: characterCount,
+          status: 'awaiting_confirmation',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', episodeId);
+    });
+
+    return { episodeId, status: 'awaiting_confirmation' };
+  },
+);
+
+// ── Step 2: Generate audio (triggered by user choosing provider) ────────────
+export const generateEpisode = inngest.createFunction(
+  {
+    id: 'generate-episode',
+    name: 'Generate Episode',
+    retries: 2,
+    triggers: [{ event: 'episode/generate' }],
+    onFailure: async ({ error, event }: { error: Error; event: FailureEvent }) => {
+      const episodeId = event?.data?.event?.data?.episodeId;
+      if (episodeId) await markFailed(episodeId, error.message);
+    },
+  },
+  async ({
+    event,
+    step,
+  }: {
+    event: { data: { episodeId: string; provider: 'elevenlabs' | 'openai' } };
+    step: import('inngest').GetStepTools<typeof inngest>;
+  }) => {
+    const { episodeId, provider } = event.data;
+    const supabase = createServerSupabase();
+
+    // Fetch episode + settings
     const { episode, settings } = await step.run('fetch-data', async () => {
       const [episodeRes, settingsRes] = await Promise.all([
         supabase.from('episodes').select('*').eq('id', episodeId).single(),
         supabase.from('settings').select('*').eq('id', 'singleton').single(),
       ]);
-
       if (episodeRes.error) throw new Error(`Episode not found: ${episodeRes.error.message}`);
       if (settingsRes.error) throw new Error(`Settings not found: ${settingsRes.error.message}`);
-      if (!settingsRes.data.elevenlabs_api_key) {
+
+      if (provider === 'elevenlabs' && !settingsRes.data.elevenlabs_api_key) {
         throw new Error('ElevenLabs API key not configured. Visit /settings to add it.');
+      }
+      if (provider === 'openai' && !settingsRes.data.openai_api_key) {
+        throw new Error('OpenAI API key not configured. Visit /settings to add it.');
       }
 
       return { episode: episodeRes.data, settings: settingsRes.data };
     });
 
-    // ── 2. Mark as processing ────────────────────────────────────────────
+    // Mark as processing
     await step.run('mark-processing', async () => {
       await supabase
         .from('episodes')
-        .update({ status: 'processing', updated_at: new Date().toISOString() })
-        .eq('id', episodeId);
-    });
-
-    // ── 3. Extract content if we only have a URL ─────────────────────────
-    const content: string = await step.run('extract-content', async () => {
-      if (episode.content) return episode.content as string;
-      if (!episode.source_url) throw new Error('No content or URL to extract from');
-
-      const extracted = await extractArticle(episode.source_url as string);
-
-      await supabase
-        .from('episodes')
         .update({
-          title: episode.title === 'Untitled' ? extracted.title : episode.title,
-          content: extracted.content,
+          status: 'processing',
+          tts_provider: provider,
           updated_at: new Date().toISOString(),
         })
         .eq('id', episodeId);
-
-      return extracted.content;
     });
 
-    // ── 4. Generate audio + upload (single step — Buffer can't cross step boundary) ──
+    // Generate audio + upload (single step — Buffer can't cross step boundaries)
     await step.run('generate-and-upload', async () => {
+      const content = episode.content as string;
       const cleanText = preprocessForTTS(content);
       const wordCount = cleanText.split(/\s+/).length;
       const chunks = chunkText(cleanText);
 
       const buffers: Buffer[] = [];
       for (const chunk of chunks) {
-        const buf = await generateSpeech(
-          chunk,
-          settings.elevenlabs_voice_id as string,
-          settings.elevenlabs_api_key as string,
-        );
+        let buf: Buffer;
+        if (provider === 'openai') {
+          buf = await generateSpeechOpenAI(
+            chunk,
+            (settings.openai_voice as string) ?? 'onyx',
+            settings.openai_api_key as string,
+          );
+        } else {
+          buf = await generateSpeech(
+            chunk,
+            settings.elevenlabs_voice_id as string,
+            settings.elevenlabs_api_key as string,
+          );
+        }
         buffers.push(buf);
       }
 
@@ -111,6 +184,6 @@ export const processEpisode = inngest.createFunction(
         .eq('id', episodeId);
     });
 
-    return { episodeId, status: 'ready' };
+    return { episodeId, provider, status: 'ready' };
   },
 );

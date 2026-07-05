@@ -17,6 +17,7 @@ export interface Episode {
   audio_url?: string;
   duration_seconds?: number;
   word_count?: number;
+  character_count?: number;
   status: string;
   error_message?: string;
   listen_position_seconds: number;
