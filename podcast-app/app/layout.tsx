@@ -4,6 +4,7 @@ import { PlayerProvider } from '@/components/PlayerContext';
 import AudioPlayer from '@/components/AudioPlayer';
 import Link from 'next/link';
 import { Headphones, Plus, Settings } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/next';
 
 export const metadata: Metadata = {
   title: 'ArticleCast',
@@ -78,6 +79,7 @@ export default function RootLayout({
           {/* Persistent podcast player */}
           <AudioPlayer />
         </PlayerProvider>
+        <Analytics />
       </body>
     </html>
   );
