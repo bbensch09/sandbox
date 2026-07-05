@@ -15,7 +15,7 @@ export async function generateSpeech(
     {
       method: 'POST',
       headers: {
-        'xi-api-key': apiKey,
+        'xi-api-key': apiKey.trim(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -42,11 +42,12 @@ export async function generateSpeech(
 
 export async function fetchVoices(apiKey: string): Promise<Voice[]> {
   const response = await fetch('https://api.elevenlabs.io/v1/voices', {
-    headers: { 'xi-api-key': apiKey },
+    headers: { 'xi-api-key': apiKey.trim() },
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch voices: ${response.status}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(`ElevenLabs ${response.status}: ${body || 'no detail'}`);
   }
 
   const data = await response.json();

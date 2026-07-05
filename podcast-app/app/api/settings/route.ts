@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   };
 
   if (body.elevenlabs_api_key !== undefined) {
-    updates.elevenlabs_api_key = body.elevenlabs_api_key;
+    updates.elevenlabs_api_key = body.elevenlabs_api_key.trim();
   }
   if (body.elevenlabs_voice_id) {
     updates.elevenlabs_voice_id = body.elevenlabs_voice_id;
