@@ -39,9 +39,9 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Fire Inngest job
+  // Fire Inngest extraction job
   await inngest.send({
-    name: 'episode/process',
+    name: 'episode/extract',
     data: { episodeId: episode.id },
   });
 

@@ -35,3 +35,14 @@ alter publication supabase_realtime add table episodes;
 -- Run this separately in the Supabase dashboard → Storage → New bucket:
 --   Name: audio
 --   Public: true
+
+-- ── Run the following to add new columns (if upgrading an existing database) ──
+
+ALTER TABLE settings
+  ADD COLUMN IF NOT EXISTS openai_api_key text,
+  ADD COLUMN IF NOT EXISTS openai_voice text DEFAULT 'onyx',
+  ADD COLUMN IF NOT EXISTS allowed_emails text[] DEFAULT ARRAY['bbensch@gmail.com'];
+
+ALTER TABLE episodes
+  ADD COLUMN IF NOT EXISTS character_count integer,
+  ADD COLUMN IF NOT EXISTS tts_provider text;
