@@ -12,6 +12,7 @@
     "@mozilla/readability": "^0.6.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
+    "@vercel/analytics": "^2.0.1",
     "inngest": "^4.11.0",
     "jsdom": "^29.1.1",
     "lucide-react": "^1.22.0",
