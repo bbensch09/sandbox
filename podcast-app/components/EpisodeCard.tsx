@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles } from 'lucide-react';
+import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw } from 'lucide-react';
 import { usePlayer, Episode } from './PlayerContext';
 
 const ELEVENLABS_COST_PER_CHAR = 0.00025; // $0.25 per 1000 chars
@@ -70,10 +70,18 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [generating, setGenerating] = useState<'elevenlabs' | 'openai' | null>(null);
   const [genError, setGenError] = useState('');
+  const [retrying, setRetrying] = useState(false);
 
   const isActive = current?.id === episode.id;
   const canPlay = episode.status === 'ready' && episode.audio_url;
   const awaitingConfirmation = episode.status === 'awaiting_confirmation';
+
+  const IN_PROGRESS = new Set(['pending', 'extracting', 'processing']);
+  const TEN_MIN_MS = 10 * 60 * 1000;
+  const ageMs = Date.now() - new Date(episode.created_at).getTime();
+  const canRetry =
+    episode.status === 'failed' ||
+    (IN_PROGRESS.has(episode.status) && ageMs > TEN_MIN_MS);
 
   const handlePlay = () => {
     if (!canPlay) return;
@@ -107,6 +115,15 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Failed to start generation');
       setGenerating(null);
+    }
+  };
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await fetch(`/api/episodes/${episode.id}/retry`, { method: 'POST' });
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -157,6 +174,19 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
 
         {episode.status === 'failed' && episode.error_message && (
           <p className="text-xs text-red-400 mt-1 line-clamp-1">{episode.error_message}</p>
+        )}
+
+        {/* Retry button */}
+        {canRetry && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleRetry(); }}
+            disabled={retrying}
+            className="inline-flex items-center gap-1.5 mt-2 text-xs px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+            style={{ color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.1)', border: '1px solid rgba(148,163,184,0.2)' }}
+          >
+            {retrying ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
         )}
 
         {/* Cost confirmation UI */}

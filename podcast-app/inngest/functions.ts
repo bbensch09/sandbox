@@ -138,7 +138,8 @@ export const generateEpisode = inngest.createFunction(
       const content = episode.content as string;
       const cleanText = preprocessForTTS(content);
       const wordCount = cleanText.split(/\s+/).length;
-      const chunks = chunkText(cleanText);
+      // OpenAI TTS max is 4096 chars; ElevenLabs allows 5000
+      const chunks = chunkText(cleanText, provider === 'openai' ? 4000 : 4500);
 
       const buffers: Buffer[] = [];
       for (const chunk of chunks) {
