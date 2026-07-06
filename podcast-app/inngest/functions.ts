@@ -133,42 +133,69 @@ export const generateEpisode = inngest.createFunction(
         .eq('id', episodeId);
     });
 
-    // Generate audio + upload (single step — Buffer can't cross step boundaries)
-    await step.run('generate-and-upload', async () => {
-      const content = episode.content as string;
-      const cleanText = preprocessForTTS(content);
-      const wordCount = cleanText.split(/\s+/).length;
-      // OpenAI TTS max is 4096 chars; ElevenLabs allows 5000
+    // Prepare chunks — returns plain strings so they safely cross step boundaries
+    const { chunks, wordCount } = await step.run('prepare-chunks', async () => {
+      const cleanText = preprocessForTTS(episode.content as string);
+      // OpenAI TTS hard max is 4096 chars; ElevenLabs allows 5000
       const chunks = chunkText(cleanText, provider === 'openai' ? 4000 : 4500);
+      return { chunks, wordCount: cleanText.split(/\s+/).length };
+    });
 
-      const buffers: Buffer[] = [];
-      for (const chunk of chunks) {
-        let buf: Buffer;
-        if (provider === 'openai') {
-          buf = await generateSpeechOpenAI(
-            chunk,
-            (settings.openai_voice as string) ?? 'onyx',
-            settings.openai_api_key as string,
-          );
-        } else {
-          buf = await generateSpeech(
-            chunk,
-            settings.elevenlabs_voice_id as string,
-            settings.elevenlabs_api_key as string,
-          );
-        }
-        buffers.push(buf);
-      }
+    // Generate one chunk per step — each call is ~3-5s, well under Vercel's
+    // 10s function timeout. Inngest memoizes completed steps on replay so the
+    // loop is safe: already-done chunks are skipped on each re-invocation.
+    // Buffers can't cross step boundaries (JSON serialization), so each chunk
+    // is uploaded to temporary storage and combined in the final step.
+    for (let i = 0; i < chunks.length; i++) {
+      const idx = i;
+      await step.run(`generate-chunk-${idx}`, async () => {
+        const buf =
+          provider === 'openai'
+            ? await generateSpeechOpenAI(
+                chunks[idx],
+                (settings.openai_voice as string) ?? 'onyx',
+                settings.openai_api_key as string,
+              )
+            : await generateSpeech(
+                chunks[idx],
+                settings.elevenlabs_voice_id as string,
+                settings.elevenlabs_api_key as string,
+              );
+
+        const { error } = await supabase.storage
+          .from('audio')
+          .upload(`${episodeId}-chunk-${idx}.mp3`, buf, {
+            contentType: 'audio/mpeg',
+            upsert: true,
+          });
+        if (error) throw new Error(`Chunk ${idx} upload failed: ${error.message}`);
+      });
+    }
+
+    // Download all chunks in parallel, concatenate, upload final file
+    await step.run('combine-and-finalize', async () => {
+      const buffers = await Promise.all(
+        Array.from({ length: chunks.length }, async (_, i) => {
+          const { data, error } = await supabase.storage
+            .from('audio')
+            .download(`${episodeId}-chunk-${i}.mp3`);
+          if (error) throw new Error(`Chunk ${i} download failed: ${error.message}`);
+          return Buffer.from(await data.arrayBuffer());
+        }),
+      );
 
       const combined = Buffer.concat(buffers);
-      const durationSeconds = Math.round((wordCount / 140) * 60);
       const path = `${episodeId}.mp3`;
 
-      const { error } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('audio')
         .upload(path, combined, { contentType: 'audio/mpeg', upsert: true });
+      if (uploadError) throw new Error(`Final upload failed: ${uploadError.message}`);
 
-      if (error) throw new Error(`Storage upload failed: ${error.message}`);
+      // Clean up temp chunk files (best-effort)
+      await supabase.storage
+        .from('audio')
+        .remove(Array.from({ length: chunks.length }, (_, i) => `${episodeId}-chunk-${i}.mp3`));
 
       const { data: urlData } = supabase.storage.from('audio').getPublicUrl(path);
 
@@ -178,7 +205,7 @@ export const generateEpisode = inngest.createFunction(
           audio_path: path,
           audio_url: urlData.publicUrl,
           word_count: wordCount,
-          duration_seconds: durationSeconds,
+          duration_seconds: Math.round((wordCount / 140) * 60),
           status: 'ready',
           updated_at: new Date().toISOString(),
         })
