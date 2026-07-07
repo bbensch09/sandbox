@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw } from 'lucide-react';
+import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2 } from 'lucide-react';
+import { OPENAI_INTERVIEW_VOICES } from '@/lib/transcript';
 import { usePlayer, Episode } from './PlayerContext';
 
 const ELEVENLABS_COST_PER_CHAR = 0.00025; // $0.25 per 1000 chars
@@ -169,6 +170,12 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
             <span className="text-xs text-slate-500">{formatDuration(episode.duration_seconds)}</span>
           )}
           <span className="text-xs text-slate-600">{formatDate(episode.created_at)}</span>
+          {episode.is_interview && (
+            <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full" style={{ color: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.1)' }}>
+              <Mic2 size={10} />
+              Interview
+            </span>
+          )}
           <StatusBadge status={episode.status} />
         </div>
 
@@ -196,13 +203,32 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
             onClick={(e) => e.stopPropagation()}
             style={{ backgroundColor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(251,191,36,0.2)' }}
           >
-            <p className="text-xs font-medium" style={{ color: '#fbbf24' }}>
-              Ready to convert · {chars.toLocaleString()} chars
-            </p>
+            {/* Summary line */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {episode.is_interview && <Mic2 size={12} style={{ color: '#fbbf24' }} />}
+              <p className="text-xs font-medium" style={{ color: '#fbbf24' }}>
+                Ready to convert · {chars.toLocaleString()} chars
+                {episode.is_interview && episode.speaker_count
+                  ? ` · ${episode.speaker_count} speaker${episode.speaker_count !== 1 ? 's' : ''}`
+                  : ''}
+              </p>
+            </div>
 
-            {genError && (
-              <p className="text-xs text-red-400">{genError}</p>
+            {/* Interview voice mapping */}
+            {episode.is_interview && episode.speaker_count && episode.speaker_count <= 3 && (
+              <p className="text-xs" style={{ color: '#94a3b8' }}>
+                OpenAI voices: {OPENAI_INTERVIEW_VOICES.slice(0, episode.speaker_count).join(', ')}
+              </p>
             )}
+
+            {/* Warning for >3 speakers */}
+            {episode.is_interview && episode.speaker_count && episode.speaker_count > 3 && (
+              <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ color: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}>
+                ⚠ {episode.speaker_count} speakers detected — only the first 3 get distinct voices (fable, onyx, nova). The rest will use fable.
+              </p>
+            )}
+
+            {genError && <p className="text-xs text-red-400">{genError}</p>}
 
             <div className="flex gap-2">
               <button
@@ -211,11 +237,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                 style={{ backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.3)' }}
               >
-                {generating === 'openai' ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <Zap size={12} />
-                )}
+                {generating === 'openai' ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
                 OpenAI TTS · {formatCost(chars, OPENAI_COST_PER_CHAR)}
               </button>
 
@@ -225,11 +247,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                 style={{ backgroundColor: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.3)' }}
               >
-                {generating === 'elevenlabs' ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <Sparkles size={12} />
-                )}
+                {generating === 'elevenlabs' ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                 ElevenLabs · {formatCost(chars, ELEVENLABS_COST_PER_CHAR)}
               </button>
             </div>

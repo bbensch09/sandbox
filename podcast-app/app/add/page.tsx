@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Link2, FileText, Loader2 } from 'lucide-react';
+import { Link2, FileText, Loader2, Mic2 } from 'lucide-react';
 
 type Mode = 'url' | 'text';
 
@@ -12,6 +12,7 @@ export default function AddEpisode() {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
+  const [isInterview, setIsInterview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -23,8 +24,8 @@ export default function AddEpisode() {
     try {
       const body =
         mode === 'url'
-          ? { sourceUrl: url, title: title || undefined }
-          : { content: text, title: title || 'Pasted Article' };
+          ? { sourceUrl: url, title: title || undefined, isInterview }
+          : { content: text, title: title || 'Pasted Article', isInterview };
 
       const res = await fetch('/api/episodes', {
         method: 'POST',
@@ -127,6 +128,37 @@ export default function AddEpisode() {
             }}
           />
         </div>
+
+        {/* Interview transcript toggle */}
+        <label
+          className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer select-none"
+          style={{ backgroundColor: isInterview ? 'rgba(124,58,237,0.1)' : 'rgb(15,23,42)', border: `1px solid ${isInterview ? 'rgba(124,58,237,0.4)' : 'rgb(51,65,85)'}` }}
+        >
+          <input
+            type="checkbox"
+            checked={isInterview}
+            onChange={(e) => setIsInterview(e.target.checked)}
+            className="sr-only"
+          />
+          <div
+            className="flex-shrink-0 w-9 h-5 rounded-full transition-colors relative"
+            style={{ backgroundColor: isInterview ? '#7c3aed' : 'rgb(51,65,85)' }}
+          >
+            <div
+              className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+              style={{ transform: isInterview ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </div>
+          <Mic2 size={15} style={{ color: isInterview ? '#a78bfa' : '#64748b' }} />
+          <div>
+            <p className="text-sm font-medium" style={{ color: isInterview ? '#e2e8f0' : '#94a3b8' }}>
+              Interview transcript
+            </p>
+            <p className="text-xs" style={{ color: '#64748b' }}>
+              Assigns distinct voices per speaker (fable, onyx, nova)
+            </p>
+          </div>
+        </label>
 
         {error && (
           <p className="text-sm rounded-xl px-4 py-3" style={{ color: '#f87171', backgroundColor: 'rgba(239,68,68,0.1)' }}>

@@ -45,4 +45,6 @@ ALTER TABLE settings
 
 ALTER TABLE episodes
   ADD COLUMN IF NOT EXISTS character_count integer,
-  ADD COLUMN IF NOT EXISTS tts_provider text;
+  ADD COLUMN IF NOT EXISTS tts_provider text,
+  ADD COLUMN IF NOT EXISTS is_interview boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS speaker_count integer;
