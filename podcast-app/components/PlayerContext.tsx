@@ -18,6 +18,8 @@ export interface Episode {
   duration_seconds?: number;
   word_count?: number;
   character_count?: number;
+  is_interview?: boolean;
+  speaker_count?: number;
   status: string;
   error_message?: string;
   listen_position_seconds: number;

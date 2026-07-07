@@ -15,7 +15,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { title, sourceUrl, content } = body;
+  const { title, sourceUrl, content, isInterview } = body;
 
   if (!sourceUrl && !content) {
     return NextResponse.json(
@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       source_url: sourceUrl || null,
       content: content || null,
       status: 'pending',
+      is_interview: !!isInterview,
     })
     .select()
     .single();
