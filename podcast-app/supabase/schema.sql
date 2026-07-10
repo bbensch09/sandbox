@@ -43,6 +43,10 @@ ALTER TABLE settings
   ADD COLUMN IF NOT EXISTS openai_voice text DEFAULT 'onyx',
   ADD COLUMN IF NOT EXISTS allowed_emails text[] DEFAULT ARRAY['bbensch@gmail.com'];
 
+ALTER TABLE settings
+  ADD COLUMN IF NOT EXISTS inworld_api_key text,
+  ADD COLUMN IF NOT EXISTS inworld_voice text DEFAULT 'Dennis';
+
 ALTER TABLE episodes
   ADD COLUMN IF NOT EXISTS character_count integer,
   ADD COLUMN IF NOT EXISTS tts_provider text,

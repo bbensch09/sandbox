@@ -7,6 +7,7 @@ import { usePlayer, Episode } from './PlayerContext';
 
 const ELEVENLABS_COST_PER_CHAR = 0.00025; // $0.25 per 1000 chars
 const OPENAI_COST_PER_CHAR = 0.00004;     // $0.04 per 1000 chars
+const INWORLD_COST_PER_CHAR = 0.000025;   // $0.025 per 1000 chars (TTS-2)
 
 function formatCost(chars: number, perChar: number): string {
   const cost = chars * perChar;
@@ -69,7 +70,7 @@ interface Props {
 export default function EpisodeCard({ episode, onDelete }: Props) {
   const { play, togglePlay, episode: current, isPlaying } = usePlayer();
   const [deleting, setDeleting] = useState(false);
-  const [generating, setGenerating] = useState<'elevenlabs' | 'openai' | null>(null);
+  const [generating, setGenerating] = useState<'elevenlabs' | 'openai' | 'inworld' | null>(null);
   const [genError, setGenError] = useState('');
   const [retrying, setRetrying] = useState(false);
 
@@ -100,7 +101,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
     onDelete(episode.id);
   };
 
-  const handleGenerate = async (provider: 'elevenlabs' | 'openai') => {
+  const handleGenerate = async (provider: 'elevenlabs' | 'openai' | 'inworld') => {
     setGenerating(provider);
     setGenError('');
     try {
@@ -214,37 +215,42 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
               </p>
             </div>
 
-            {/* Interview voice mapping */}
-            {episode.is_interview && episode.speaker_count && episode.speaker_count <= 3 && (
-              <p className="text-xs" style={{ color: '#94a3b8' }}>
-                OpenAI voices: {OPENAI_INTERVIEW_VOICES.slice(0, episode.speaker_count).join(', ')}
-              </p>
-            )}
-
-            {/* Warning for >3 speakers */}
-            {episode.is_interview && episode.speaker_count && episode.speaker_count > 3 && (
+            {/* Warning for >4 speakers */}
+            {episode.is_interview && episode.speaker_count && episode.speaker_count > 4 && (
               <p className="text-xs rounded-lg px-2.5 py-1.5" style={{ color: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)' }}>
-                ⚠ {episode.speaker_count} speakers detected — only the first 3 get distinct voices (fable, onyx, nova). The rest will use fable.
+                ⚠ {episode.speaker_count} speakers detected — Inworld supports 4 distinct voices; OpenAI & ElevenLabs support 3. Extra speakers will reuse the first voice.
               </p>
             )}
 
             {genError && <p className="text-xs text-red-400">{genError}</p>}
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleGenerate('openai')}
-                disabled={generating !== null}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                style={{ backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.3)' }}
-              >
-                {generating === 'openai' ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                OpenAI TTS · {formatCost(chars, OPENAI_COST_PER_CHAR)}
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleGenerate('inworld')}
+                  disabled={generating !== null}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'rgba(20,184,166,0.15)', color: '#5eead4', border: '1px solid rgba(20,184,166,0.3)' }}
+                >
+                  {generating === 'inworld' ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                  Inworld · {formatCost(chars, INWORLD_COST_PER_CHAR)}
+                </button>
+
+                <button
+                  onClick={() => handleGenerate('openai')}
+                  disabled={generating !== null}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.3)' }}
+                >
+                  {generating === 'openai' ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                  OpenAI · {formatCost(chars, OPENAI_COST_PER_CHAR)}
+                </button>
+              </div>
 
               <button
                 onClick={() => handleGenerate('elevenlabs')}
                 disabled={generating !== null}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                 style={{ backgroundColor: 'rgba(124,58,237,0.2)', color: '#c4b5fd', border: '1px solid rgba(124,58,237,0.3)' }}
               >
                 {generating === 'elevenlabs' ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}

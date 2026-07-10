@@ -40,10 +40,10 @@ export async function POST(
 
   const { id } = await params;
   const body = await request.json();
-  const provider = body.provider as 'elevenlabs' | 'openai';
+  const provider = body.provider as 'elevenlabs' | 'openai' | 'inworld';
 
-  if (provider !== 'elevenlabs' && provider !== 'openai') {
-    return NextResponse.json({ error: 'provider must be elevenlabs or openai' }, { status: 400 });
+  if (provider !== 'elevenlabs' && provider !== 'openai' && provider !== 'inworld') {
+    return NextResponse.json({ error: 'provider must be elevenlabs, openai, or inworld' }, { status: 400 });
   }
 
   const { data: episode, error } = await supabase
