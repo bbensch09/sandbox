@@ -3,6 +3,7 @@ import { createServerSupabase } from '@/lib/supabase-server';
 import { extractArticle } from '@/lib/extraction';
 import { generateSpeech, chunkText, preprocessForTTS } from '@/lib/elevenlabs';
 import { generateSpeechOpenAI } from '@/lib/openai-tts';
+import { generateSpeechInworld } from '@/lib/inworld-tts';
 import { parseTranscript, getInterviewVoice } from '@/lib/transcript';
 
 type FailureEvent = { data?: { event?: { data?: { episodeId?: string } } } };
@@ -107,7 +108,7 @@ export const generateEpisode = inngest.createFunction(
     event,
     step,
   }: {
-    event: { data: { episodeId: string; provider: 'elevenlabs' | 'openai' } };
+    event: { data: { episodeId: string; provider: 'elevenlabs' | 'openai' | 'inworld' } };
     step: import('inngest').GetStepTools<typeof inngest>;
   }) => {
     const { episodeId, provider } = event.data;
@@ -126,6 +127,9 @@ export const generateEpisode = inngest.createFunction(
       }
       if (provider === 'openai' && !settingsRes.data.openai_api_key) {
         throw new Error('OpenAI API key not configured. Visit /settings to add it.');
+      }
+      if (provider === 'inworld' && !settingsRes.data.inworld_api_key) {
+        throw new Error('Inworld API key not configured. Visit /settings to add it.');
       }
 
       return { episode: episodeRes.data, settings: settingsRes.data };
@@ -146,7 +150,7 @@ export const generateEpisode = inngest.createFunction(
     // so the result safely crosses Inngest step boundaries (no Buffers).
     const { chunks, wordCount } = await step.run('prepare-chunks', async () => {
       const content = episode.content as string;
-      const maxChars = provider === 'openai' ? 4000 : 4500;
+      const maxChars = provider === 'openai' ? 4000 : provider === 'inworld' ? 1900 : 4500;
 
       if (episode.is_interview) {
         // Parse speaker turns and assign per-speaker voices
@@ -189,11 +193,17 @@ export const generateEpisode = inngest.createFunction(
                 voice ?? (settings.openai_voice as string) ?? 'onyx',
                 settings.openai_api_key as string,
               )
-            : await generateSpeech(
-                text,
-                voice ?? (settings.elevenlabs_voice_id as string),
-                settings.elevenlabs_api_key as string,
-              );
+            : provider === 'inworld'
+              ? await generateSpeechInworld(
+                  text,
+                  voice ?? (settings.inworld_voice as string) ?? 'Dennis',
+                  settings.inworld_api_key as string,
+                )
+              : await generateSpeech(
+                  text,
+                  voice ?? (settings.elevenlabs_voice_id as string),
+                  settings.elevenlabs_api_key as string,
+                );
 
         const { error } = await supabase.storage
           .from('audio')

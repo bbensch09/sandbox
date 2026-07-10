@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Check, Loader2, RefreshCw, Plus, X, LogOut } from 'lucide-react';
 import { createClientSupabase } from '@/lib/supabase-client';
 import { OPENAI_VOICES } from '@/lib/openai-tts';
+import { INWORLD_VOICES } from '@/lib/inworld-tts';
 import type { User } from '@supabase/supabase-js';
 
 interface Voice {
@@ -15,9 +16,11 @@ interface Voice {
 interface Settings {
   has_elevenlabs_key: boolean;
   has_openai_key: boolean;
+  has_inworld_key: boolean;
   elevenlabs_voice_id: string;
   elevenlabs_voice_name: string;
   openai_voice: string;
+  inworld_voice: string;
   allowed_emails: string[];
 }
 
@@ -37,6 +40,10 @@ export default function SettingsPage() {
   // OpenAI fields
   const [openaiKey, setOpenaiKey] = useState('');
   const [openaiVoice, setOpenaiVoice] = useState('onyx');
+
+  // Inworld fields
+  const [inworldKey, setInworldKey] = useState('');
+  const [inworldVoice, setInworldVoice] = useState('Dennis');
 
   // Access control
   const [allowedEmails, setAllowedEmails] = useState<string[]>([]);
@@ -66,6 +73,7 @@ export default function SettingsPage() {
         setSelectedVoiceId(data.elevenlabs_voice_id ?? '');
         setSelectedVoiceName(data.elevenlabs_voice_name ?? '');
         setOpenaiVoice(data.openai_voice ?? 'onyx');
+        setInworldVoice(data.inworld_voice ?? 'Dennis');
         setAllowedEmails(data.allowed_emails ?? []);
       });
   }, [authChecked, user]);
@@ -98,11 +106,13 @@ export default function SettingsPage() {
       const body: Record<string, unknown> = {
         allowed_emails: allowedEmails,
         openai_voice: openaiVoice,
+        inworld_voice: inworldVoice,
       };
       if (elevenlabsKey.trim()) body.elevenlabs_api_key = elevenlabsKey.trim();
       if (selectedVoiceId) body.elevenlabs_voice_id = selectedVoiceId;
       if (selectedVoiceName) body.elevenlabs_voice_name = selectedVoiceName;
       if (openaiKey.trim()) body.openai_api_key = openaiKey.trim();
+      if (inworldKey.trim()) body.inworld_api_key = inworldKey.trim();
 
       const res = await fetch('/api/settings', {
         method: 'POST',
@@ -116,14 +126,17 @@ export default function SettingsPage() {
 
       setElevenlabsKey('');
       setOpenaiKey('');
+      setInworldKey('');
       setSettings((s) =>
         s ? {
           ...s,
           has_elevenlabs_key: s.has_elevenlabs_key || !!body.elevenlabs_api_key,
           has_openai_key: s.has_openai_key || !!body.openai_api_key,
+          has_inworld_key: s.has_inworld_key || !!body.inworld_api_key,
           elevenlabs_voice_id: (body.elevenlabs_voice_id as string) || s.elevenlabs_voice_id,
           elevenlabs_voice_name: (body.elevenlabs_voice_name as string) || s.elevenlabs_voice_name,
           openai_voice: openaiVoice,
+          inworld_voice: inworldVoice,
           allowed_emails: allowedEmails,
         } : s,
       );
@@ -307,6 +320,55 @@ export default function SettingsPage() {
               <option key={v} value={v}>{v}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Inworld AI */}
+      <div
+        className="rounded-2xl p-5 space-y-5"
+        style={{ backgroundColor: 'rgb(15,23,42)', border: '1px solid rgb(30,41,59)' }}
+      >
+        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#64748b' }}>
+          Inworld AI TTS
+        </p>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-white">API Key</label>
+            {settings.has_inworld_key && (
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: '#4ade80', backgroundColor: 'rgba(74,222,128,0.1)' }}>
+                Key saved
+              </span>
+            )}
+          </div>
+          <input
+            type="password"
+            value={inworldKey}
+            onChange={(e) => setInworldKey(e.target.value)}
+            placeholder={settings.has_inworld_key ? '•••••••••••• (leave blank to keep current)' : 'Paste API key…'}
+            className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none"
+            style={{ backgroundColor: 'rgb(2,6,23)', border: '1px solid rgb(51,65,85)' }}
+          />
+          <p className="text-xs mt-1.5" style={{ color: '#64748b' }}>
+            inworld.ai → Studio → API Keys → Create key → copy the key value
+          </p>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-white block mb-1.5">Default Voice</label>
+          <select
+            value={inworldVoice}
+            onChange={(e) => setInworldVoice(e.target.value)}
+            className="w-full rounded-xl px-4 py-3 text-sm text-white outline-none"
+            style={{ backgroundColor: 'rgb(2,6,23)', border: '1px solid rgb(51,65,85)' }}
+          >
+            {INWORLD_VOICES.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+          <p className="text-xs mt-1.5" style={{ color: '#64748b' }}>
+            Interview mode uses Sarah, Dennis, Oliver &amp; Claire for up to 4 distinct speaker voices.
+          </p>
         </div>
       </div>
 

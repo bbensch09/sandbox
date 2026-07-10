@@ -23,7 +23,7 @@ export async function GET() {
   const supabase = createServerSupabase();
   const { data, error } = await supabase
     .from('settings')
-    .select('elevenlabs_voice_id, elevenlabs_voice_name, openai_voice, allowed_emails, updated_at')
+    .select('elevenlabs_voice_id, elevenlabs_voice_name, openai_voice, inworld_voice, allowed_emails, updated_at')
     .eq('id', 'singleton')
     .single();
 
@@ -31,7 +31,7 @@ export async function GET() {
 
   const { data: keys } = await supabase
     .from('settings')
-    .select('elevenlabs_api_key, openai_api_key')
+    .select('elevenlabs_api_key, openai_api_key, inworld_api_key')
     .eq('id', 'singleton')
     .single();
 
@@ -39,6 +39,7 @@ export async function GET() {
     ...data,
     has_elevenlabs_key: !!keys?.elevenlabs_api_key,
     has_openai_key: !!keys?.openai_api_key,
+    has_inworld_key: !!keys?.inworld_api_key,
   });
 }
 
@@ -65,6 +66,8 @@ export async function POST(request: NextRequest) {
   if (body.elevenlabs_voice_name) updates.elevenlabs_voice_name = body.elevenlabs_voice_name;
   if (body.openai_api_key !== undefined) updates.openai_api_key = body.openai_api_key.trim();
   if (body.openai_voice) updates.openai_voice = body.openai_voice;
+  if (body.inworld_api_key !== undefined) updates.inworld_api_key = body.inworld_api_key.trim();
+  if (body.inworld_voice) updates.inworld_voice = body.inworld_voice;
   if (Array.isArray(body.allowed_emails)) updates.allowed_emails = body.allowed_emails;
 
   const { error } = await supabase

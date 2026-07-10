@@ -20,10 +20,16 @@ export const ELEVENLABS_INTERVIEW_VOICE_IDS = [
   'IKne3meq5aSn9XLyUdCD', // Charlie
 ] as const;
 
+// Inworld standard voices for interview mode (4 distinct voices)
+export const INWORLD_INTERVIEW_VOICES = ['Sarah', 'Dennis', 'Oliver', 'Claire'] as const;
+
 export function getInterviewVoice(
   speakerIndex: number,
-  provider: 'openai' | 'elevenlabs',
+  provider: 'openai' | 'elevenlabs' | 'inworld',
 ): string {
+  if (provider === 'inworld') {
+    return INWORLD_INTERVIEW_VOICES[Math.min(speakerIndex, 3)];
+  }
   const idx = Math.min(speakerIndex, 2); // cap at index 2 for 3 voices
   return provider === 'openai'
     ? OPENAI_INTERVIEW_VOICES[idx]
