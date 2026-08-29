@@ -21,25 +21,31 @@ async function getAuthedUser() {
 
 export async function GET() {
   const supabase = createServerSupabase();
+  // Select * rather than naming columns: naming a column whose migration has
+  // not been run yet fails the whole request. Keys are reduced to booleans
+  // below, so nothing secret is returned.
   const { data, error } = await supabase
     .from('settings')
-    .select('elevenlabs_voice_id, elevenlabs_voice_name, openai_voice, inworld_voice, allowed_emails, updated_at')
+    .select('*')
     .eq('id', 'singleton')
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const { data: keys } = await supabase
-    .from('settings')
-    .select('elevenlabs_api_key, openai_api_key, inworld_api_key')
-    .eq('id', 'singleton')
-    .single();
-
   return NextResponse.json({
-    ...data,
-    has_elevenlabs_key: !!keys?.elevenlabs_api_key,
-    has_openai_key: !!keys?.openai_api_key,
-    has_inworld_key: !!keys?.inworld_api_key,
+    elevenlabs_voice_id: data.elevenlabs_voice_id ?? '',
+    elevenlabs_voice_name: data.elevenlabs_voice_name ?? '',
+    openai_voice: data.openai_voice ?? 'onyx',
+    inworld_voice: data.inworld_voice ?? 'Dennis',
+    allowed_emails: data.allowed_emails ?? [],
+    updated_at: data.updated_at,
+    has_elevenlabs_key: !!data.elevenlabs_api_key,
+    has_openai_key: !!data.openai_api_key,
+    has_inworld_key: !!data.inworld_api_key,
+    // Flags the UI can use to tell you a migration is still outstanding.
+    missing_columns: ['inworld_api_key', 'inworld_voice'].filter(
+      (c) => !(c in data),
+    ),
   });
 }
 
@@ -75,6 +81,13 @@ export async function POST(request: NextRequest) {
     .update(updates)
     .eq('id', 'singleton');
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // PGRST204 = column missing from the schema cache, i.e. a pending migration.
+    const hint =
+      error.code === 'PGRST204'
+        ? ' — run the ALTER TABLE statements in supabase/schema.sql, then reload the schema cache.'
+        : '';
+    return NextResponse.json({ error: `${error.message}${hint}` }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

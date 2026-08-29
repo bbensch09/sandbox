@@ -34,8 +34,16 @@ export default function AddEpisode() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to create episode');
+        // Read as text first: an unhandled server error returns an empty body,
+        // and res.json() would throw a parse error that hides the real status.
+        const raw = await res.text();
+        let message = '';
+        try {
+          message = JSON.parse(raw)?.error ?? '';
+        } catch {
+          message = raw.trim().slice(0, 300);
+        }
+        throw new Error(message || `Request failed (HTTP ${res.status})`);
       }
 
       router.push('/');

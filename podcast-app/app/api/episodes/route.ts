@@ -38,13 +38,39 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // Report the whole PostgREST error. `message` alone can be empty (and is
+    // then dropped by JSON.stringify), which leaves the client with no cause.
+    // First line only — PostgREST/undici stuff full stack traces into `details`.
+    const firstLine = (s?: string | null) => (s ?? '').split('\n')[0].trim();
+    const detail = [firstLine(error.message), firstLine(error.details), firstLine(error.hint)]
+      .filter(Boolean)
+      .join(' — ')
+      .slice(0, 300);
+    return NextResponse.json(
+      { error: detail || `Database insert failed (code ${error.code ?? 'unknown'})` },
+      { status: 500 },
+    );
+  }
 
-  // Fire Inngest extraction job
-  await inngest.send({
-    name: 'episode/extract',
-    data: { episodeId: episode.id },
-  });
+  // The row exists by this point. If the job can't be queued, report that
+  // precisely rather than throwing and returning an empty-bodied 500.
+  try {
+    await inngest.send({
+      name: 'episode/extract',
+      data: { episodeId: episode.id },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await supabase
+      .from('episodes')
+      .update({ status: 'failed', error_message: `Could not queue extraction: ${message}` })
+      .eq('id', episode.id);
+    return NextResponse.json(
+      { error: `Episode saved, but the extraction job could not be queued: ${message}` },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json(episode, { status: 201 });
 }
