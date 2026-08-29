@@ -5,7 +5,7 @@ import EpisodeCard from '@/components/EpisodeCard';
 import SettingsCheck from '@/components/SettingsCheck';
 import { Episode } from '@/components/PlayerContext';
 import { createClientSupabase } from '@/lib/supabase-client';
-import { Headphones, RefreshCw } from 'lucide-react';
+import { Headphones, RefreshCw, AlertCircle } from 'lucide-react';
 
 const POLL_INTERVAL_MS = 30_000; // 30s × 10 = 5 min max
 const MAX_POLLS = 10;
@@ -15,12 +15,26 @@ export default function Home() {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loading, setLoading] = useState(true);
   const [showStuckBanner, setShowStuckBanner] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const pollCountRef = useRef(0);
 
+  // A failed load must not fall through to the "No episodes yet" empty state —
+  // that silently disguises an outage (paused database, missing env vars) as an
+  // empty library.
   const loadEpisodes = useCallback(async () => {
-    const res = await fetch('/api/episodes');
-    if (res.ok) setEpisodes(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch('/api/episodes');
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `Server returned ${res.status}`);
+      }
+      setEpisodes(await res.json());
+      setLoadError('');
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not reach the server');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -125,6 +139,36 @@ export default function Home() {
               style={{ backgroundColor: 'rgba(30,41,59,0.5)' }}
             />
           ))}
+        </div>
+      ) : loadError ? (
+        <div
+          className="rounded-xl px-4 py-4 text-sm"
+          style={{
+            backgroundColor: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.25)',
+            color: '#fca5a5',
+          }}
+        >
+          <div className="flex items-center gap-2 font-medium">
+            <AlertCircle size={16} className="flex-shrink-0" />
+            Couldn&apos;t load your library
+          </div>
+          <p className="mt-1.5 text-xs break-words" style={{ color: '#f87171' }}>
+            {loadError}
+          </p>
+          <p className="mt-2 text-xs" style={{ color: '#94a3b8' }}>
+            Your episodes are still saved. This usually means the database is
+            unreachable — a Supabase free-tier project pauses after inactivity and
+            needs resuming from the dashboard.
+          </p>
+          <button
+            onClick={() => { setLoading(true); loadEpisodes(); }}
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg"
+            style={{ color: '#fca5a5', backgroundColor: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}
+          >
+            <RefreshCw size={12} />
+            Try again
+          </button>
         </div>
       ) : episodes.length === 0 ? (
         <div className="text-center py-20" style={{ color: '#64748b' }}>

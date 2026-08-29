@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2 } from 'lucide-react';
-import { OPENAI_INTERVIEW_VOICES } from '@/lib/transcript';
 import { usePlayer, Episode } from './PlayerContext';
 
 const ELEVENLABS_COST_PER_CHAR = 0.00025; // $0.25 per 1000 chars
 const OPENAI_COST_PER_CHAR = 0.00004;     // $0.04 per 1000 chars
 const INWORLD_COST_PER_CHAR = 0.000025;   // $0.025 per 1000 chars (TTS-2)
+
+const IN_PROGRESS = new Set(['pending', 'extracting', 'processing']);
+const TEN_MIN_MS = 10 * 60 * 1000;
 
 function formatCost(chars: number, perChar: number): string {
   const cost = chars * perChar;
@@ -78,12 +80,21 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   const canPlay = episode.status === 'ready' && episode.audio_url;
   const awaitingConfirmation = episode.status === 'awaiting_confirmation';
 
-  const IN_PROGRESS = new Set(['pending', 'extracting', 'processing']);
-  const TEN_MIN_MS = 10 * 60 * 1000;
-  const ageMs = Date.now() - new Date(episode.created_at).getTime();
-  const canRetry =
-    episode.status === 'failed' ||
-    (IN_PROGRESS.has(episode.status) && ageMs > TEN_MIN_MS);
+  const inProgress = IN_PROGRESS.has(episode.status);
+  const [oldEnoughToRetry, setOldEnoughToRetry] = useState(false);
+
+  // Arm the 10-minute retry threshold on a timer rather than reading the clock
+  // during render. Polling stops after ~5 minutes, so a stuck episode produces
+  // no further re-renders — a render-time age check would leave the Retry
+  // button hidden forever until a manual page refresh.
+  useEffect(() => {
+    if (!inProgress) return;
+    const remaining = TEN_MIN_MS - (Date.now() - new Date(episode.created_at).getTime());
+    const id = setTimeout(() => setOldEnoughToRetry(true), Math.max(remaining, 0));
+    return () => clearTimeout(id);
+  }, [inProgress, episode.created_at]);
+
+  const canRetry = episode.status === 'failed' || (inProgress && oldEnoughToRetry);
 
   const handlePlay = () => {
     if (!canPlay) return;

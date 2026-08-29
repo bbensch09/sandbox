@@ -54,23 +54,70 @@ export async function fetchVoices(apiKey: string): Promise<Voice[]> {
   return data.voices as Voice[];
 }
 
-export function chunkText(text: string, maxChars = 4500): string[] {
-  const chunks: string[] = [];
-  let current = '';
-  // Match each sentence (text ending with punctuation)
-  const sentences = text.match(/[^.!?]+[.!?]+/g) ?? [text];
+/**
+ * Split a fragment that is already over the limit, breaking on word
+ * boundaries and hard-slicing any single token still too long.
+ * Every returned piece is guaranteed <= maxChars.
+ */
+function splitToLimit(fragment: string, maxChars: number): string[] {
+  if (fragment.length <= maxChars) return [fragment];
 
-  for (const sentence of sentences) {
-    if (current.length + sentence.length + 1 > maxChars && current.length > 0) {
-      chunks.push(current.trim());
-      current = sentence;
+  const pieces: string[] = [];
+  let buf = '';
+
+  for (const word of fragment.split(/\s+/)) {
+    if (!word) continue;
+
+    // A single token longer than the limit (URL, run-on string) — hard slice.
+    if (word.length > maxChars) {
+      if (buf) { pieces.push(buf); buf = ''; }
+      for (let i = 0; i < word.length; i += maxChars) {
+        pieces.push(word.slice(i, i + maxChars));
+      }
+      continue;
+    }
+
+    if (buf.length + word.length + 1 > maxChars) {
+      pieces.push(buf);
+      buf = word;
     } else {
-      current = current ? current + ' ' + sentence : sentence;
+      buf = buf ? buf + ' ' + word : word;
     }
   }
 
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.filter(Boolean);
+  if (buf) pieces.push(buf);
+  return pieces;
+}
+
+export function chunkText(text: string, maxChars = 4500): string[] {
+  const chunks: string[] = [];
+  let current = '';
+
+  const flush = () => {
+    const t = current.trim();
+    if (t) chunks.push(t);
+    current = '';
+  };
+
+  // Match each sentence (text ending with punctuation). Text with no terminal
+  // punctuation falls back to one fragment, which splitToLimit then breaks up —
+  // without that, a single oversized "sentence" would be sent to the TTS API
+  // whole and rejected (e.g. OpenAI's 4096 and Inworld's 2000 char limits).
+  const sentences = text.match(/[^.!?]+[.!?]+/g) ?? [text];
+
+  for (const sentence of sentences) {
+    for (const piece of splitToLimit(sentence, maxChars)) {
+      if (current.length + piece.length + 1 > maxChars && current.length > 0) {
+        flush();
+        current = piece;
+      } else {
+        current = current ? current + ' ' + piece : piece;
+      }
+    }
+  }
+
+  flush();
+  return chunks;
 }
 
 export function preprocessForTTS(text: string): string {
