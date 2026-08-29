@@ -1,0 +1,12 @@
+name = "articlecast-email"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Point this at your deployed app. Not a secret.
+ARTICLECAST_WEBHOOK_URL = "https://sandbox-theta-puce.vercel.app/api/email/inbound"
+
+# ARTICLECAST_SECRET is a secret and must NOT live in this file. Set it with:
+#   npx wrangler secret put ARTICLECAST_SECRET
+# It must match EMAIL_WEBHOOK_SECRET in the Vercel project.

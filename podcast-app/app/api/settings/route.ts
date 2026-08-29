@@ -38,6 +38,8 @@ export async function GET() {
     openai_voice: data.openai_voice ?? 'onyx',
     inworld_voice: data.inworld_voice ?? 'Dennis',
     allowed_emails: data.allowed_emails ?? [],
+    email_auto_convert_provider: data.email_auto_convert_provider ?? 'inworld',
+    email_auto_convert_max_chars: data.email_auto_convert_max_chars ?? 40000,
     updated_at: data.updated_at,
     has_elevenlabs_key: !!data.elevenlabs_api_key,
     has_openai_key: !!data.openai_api_key,
@@ -75,6 +77,17 @@ export async function POST(request: NextRequest) {
   if (body.inworld_api_key !== undefined) updates.inworld_api_key = body.inworld_api_key.trim();
   if (body.inworld_voice) updates.inworld_voice = body.inworld_voice;
   if (Array.isArray(body.allowed_emails)) updates.allowed_emails = body.allowed_emails;
+  if (body.email_auto_convert_provider) {
+    updates.email_auto_convert_provider = body.email_auto_convert_provider;
+  }
+  if (body.email_auto_convert_max_chars !== undefined) {
+    // Clamp: 0 disables auto-convert entirely, and an unbounded ceiling would
+    // defeat the point of having one.
+    const n = Number(body.email_auto_convert_max_chars);
+    if (Number.isFinite(n)) {
+      updates.email_auto_convert_max_chars = Math.max(0, Math.min(Math.round(n), 500_000));
+    }
+  }
 
   const { error } = await supabase
     .from('settings')

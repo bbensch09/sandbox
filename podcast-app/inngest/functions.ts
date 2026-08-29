@@ -54,7 +54,7 @@ export const extractEpisode = inngest.createFunction(
         .eq('id', episodeId);
     });
 
-    await step.run('extract-content', async () => {
+    const { characterCount } = await step.run('extract-content', async () => {
       let content: string = episode.content as string;
       let title: string = episode.title as string;
 
@@ -86,7 +86,39 @@ export const extractEpisode = inngest.createFunction(
           updated_at: new Date().toISOString(),
         })
         .eq('id', episodeId);
+
+      return { characterCount };
     });
+
+    // Emailed articles convert themselves, but only under the configured
+    // ceiling — anything larger waits for a human to approve the spend.
+    if (episode.auto_convert) {
+      const decision = await step.run('check-auto-convert', async () => {
+        const { data: settings } = await supabase
+          .from('settings')
+          .select('email_auto_convert_provider, email_auto_convert_max_chars')
+          .eq('id', 'singleton')
+          .single();
+
+        const maxChars = settings?.email_auto_convert_max_chars ?? 40000;
+        const provider = settings?.email_auto_convert_provider ?? 'inworld';
+        return { convert: characterCount <= maxChars, provider, maxChars };
+      });
+
+      if (decision.convert) {
+        await step.sendEvent('auto-generate', {
+          name: 'episode/generate',
+          data: { episodeId, provider: decision.provider },
+        });
+        return { episodeId, status: 'auto-converting', provider: decision.provider };
+      }
+
+      return {
+        episodeId,
+        status: 'awaiting_confirmation',
+        reason: `${characterCount} chars exceeds the ${decision.maxChars} auto-convert ceiling`,
+      };
+    }
 
     return { episodeId, status: 'awaiting_confirmation' };
   },

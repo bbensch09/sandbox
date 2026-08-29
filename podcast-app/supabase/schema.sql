@@ -52,3 +52,12 @@ ALTER TABLE episodes
   ADD COLUMN IF NOT EXISTS tts_provider text,
   ADD COLUMN IF NOT EXISTS is_interview boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS speaker_count integer;
+
+-- ── Email-to-podcast (forward an email to your dedicated address) ──
+ALTER TABLE episodes
+  ADD COLUMN IF NOT EXISTS source_type text DEFAULT 'web',
+  ADD COLUMN IF NOT EXISTS auto_convert boolean DEFAULT false;
+
+ALTER TABLE settings
+  ADD COLUMN IF NOT EXISTS email_auto_convert_provider text DEFAULT 'inworld',
+  ADD COLUMN IF NOT EXISTS email_auto_convert_max_chars integer DEFAULT 40000;

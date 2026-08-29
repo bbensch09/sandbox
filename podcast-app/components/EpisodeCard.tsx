@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2 } from 'lucide-react';
+import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2, Mail } from 'lucide-react';
 import { usePlayer, Episode } from './PlayerContext';
 
 const ELEVENLABS_COST_PER_CHAR = 0.00025; // $0.25 per 1000 chars
@@ -206,6 +206,12 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
             <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full" style={{ color: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.1)' }}>
               <Mic2 size={10} />
               Interview
+            </span>
+          )}
+          {episode.source_type === 'email' && (
+            <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full" style={{ color: '#5eead4', backgroundColor: 'rgba(94,234,212,0.1)' }}>
+              <Mail size={10} />
+              Emailed
             </span>
           )}
           <StatusBadge status={episode.status} />

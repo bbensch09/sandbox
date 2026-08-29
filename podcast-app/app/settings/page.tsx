@@ -22,7 +22,15 @@ interface Settings {
   openai_voice: string;
   inworld_voice: string;
   allowed_emails: string[];
+  email_auto_convert_provider: string;
+  email_auto_convert_max_chars: number;
 }
+
+const PROVIDER_COST_PER_CHAR: Record<string, number> = {
+  inworld: 0.000025,
+  openai: 0.00004,
+  elevenlabs: 0.00025,
+};
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -44,6 +52,10 @@ export default function SettingsPage() {
   // Inworld fields
   const [inworldKey, setInworldKey] = useState('');
   const [inworldVoice, setInworldVoice] = useState('Dennis');
+
+  // Email-to-podcast
+  const [autoProvider, setAutoProvider] = useState('inworld');
+  const [autoMaxChars, setAutoMaxChars] = useState(40000);
 
   // Access control
   const [allowedEmails, setAllowedEmails] = useState<string[]>([]);
@@ -74,6 +86,8 @@ export default function SettingsPage() {
         setSelectedVoiceName(data.elevenlabs_voice_name ?? '');
         setOpenaiVoice(data.openai_voice ?? 'onyx');
         setInworldVoice(data.inworld_voice ?? 'Dennis');
+        setAutoProvider(data.email_auto_convert_provider ?? 'inworld');
+        setAutoMaxChars(data.email_auto_convert_max_chars ?? 40000);
         setAllowedEmails(data.allowed_emails ?? []);
       });
   }, [authChecked, user]);
@@ -107,6 +121,8 @@ export default function SettingsPage() {
         allowed_emails: allowedEmails,
         openai_voice: openaiVoice,
         inworld_voice: inworldVoice,
+        email_auto_convert_provider: autoProvider,
+        email_auto_convert_max_chars: autoMaxChars,
       };
       if (elevenlabsKey.trim()) body.elevenlabs_api_key = elevenlabsKey.trim();
       if (selectedVoiceId) body.elevenlabs_voice_id = selectedVoiceId;
@@ -137,6 +153,8 @@ export default function SettingsPage() {
           elevenlabs_voice_name: (body.elevenlabs_voice_name as string) || s.elevenlabs_voice_name,
           openai_voice: openaiVoice,
           inworld_voice: inworldVoice,
+          email_auto_convert_provider: autoProvider,
+          email_auto_convert_max_chars: autoMaxChars,
           allowed_emails: allowedEmails,
         } : s,
       );
@@ -368,6 +386,69 @@ export default function SettingsPage() {
           </select>
           <p className="text-xs mt-1.5" style={{ color: '#64748b' }}>
             Interview mode uses Sarah, Dennis, Oliver &amp; Claire for up to 4 distinct speaker voices.
+          </p>
+        </div>
+      </div>
+
+      {/* Email to podcast */}
+      <div
+        className="rounded-2xl p-5 space-y-5"
+        style={{ backgroundColor: 'rgb(15,23,42)', border: '1px solid rgb(30,41,59)' }}
+      >
+        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#64748b' }}>
+          Email to Podcast
+        </p>
+
+        <p className="text-xs" style={{ color: '#94a3b8' }}>
+          Forward an article to your dedicated address and it lands here
+          automatically. Only mail from the addresses listed under Access Control
+          below is accepted.
+        </p>
+
+        <div>
+          <label className="text-sm font-medium text-white block mb-1.5">
+            Auto-convert with
+          </label>
+          <select
+            value={autoProvider}
+            onChange={(e) => setAutoProvider(e.target.value)}
+            className="w-full rounded-xl px-4 py-3 text-sm text-white outline-none"
+            style={{ backgroundColor: 'rgb(2,6,23)', border: '1px solid rgb(51,65,85)' }}
+          >
+            <option value="inworld">Inworld ($0.025 / 1k chars)</option>
+            <option value="openai">OpenAI ($0.04 / 1k chars)</option>
+            <option value="elevenlabs">ElevenLabs ($0.25 / 1k chars)</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-white block mb-1.5">
+            Only auto-convert below
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              step={1000}
+              value={autoMaxChars}
+              onChange={(e) => setAutoMaxChars(Number(e.target.value))}
+              className="flex-1 rounded-xl px-4 py-3 text-sm text-white outline-none"
+              style={{ backgroundColor: 'rgb(2,6,23)', border: '1px solid rgb(51,65,85)' }}
+            />
+            <span className="text-sm flex-shrink-0" style={{ color: '#64748b' }}>chars</span>
+          </div>
+          <p className="text-xs mt-1.5" style={{ color: '#64748b' }}>
+            {autoMaxChars > 0 ? (
+              <>
+                Caps each forwarded article at about{' '}
+                <span style={{ color: '#4ade80' }}>
+                  ${(autoMaxChars * (PROVIDER_COST_PER_CHAR[autoProvider] ?? 0)).toFixed(2)}
+                </span>
+                . Anything longer waits in your library for you to approve.
+              </>
+            ) : (
+              'Set to 0 — every forwarded article waits for manual approval.'
+            )}
           </p>
         </div>
       </div>

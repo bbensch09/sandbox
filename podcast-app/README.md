@@ -1,5 +1,18 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## ArticleCast
+
+Turns articles into podcast episodes: extract → estimate cost → generate with
+Inworld, OpenAI, or ElevenLabs → play as a PWA.
+
+- Database migrations: `supabase/schema.sql` (run in the Supabase SQL editor)
+- Forward-an-email-to-subscribe setup: [`email-worker/README.md`](./email-worker/README.md)
+
+Environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `INNGEST_EVENT_KEY`,
+`INNGEST_SIGNING_KEY`, and `EMAIL_WEBHOOK_SECRET` (only for the email feature).
+TTS provider keys live in the `settings` table, not the environment.
+
 ## Getting Started
 
 First, run the development server:
