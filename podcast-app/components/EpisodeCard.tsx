@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2 } from 'lucide-react';
 import { usePlayer, Episode } from './PlayerContext';
 
@@ -74,6 +75,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [generating, setGenerating] = useState<'elevenlabs' | 'openai' | 'inworld' | null>(null);
   const [genError, setGenError] = useState('');
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
   const isActive = current?.id === episode.id;
@@ -115,6 +117,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   const handleGenerate = async (provider: 'elevenlabs' | 'openai' | 'inworld') => {
     setGenerating(provider);
     setGenError('');
+    setNeedsSignIn(false);
     try {
       const res = await fetch(`/api/episodes/${episode.id}/generate`, {
         method: 'POST',
@@ -122,8 +125,25 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
         body: JSON.stringify({ provider }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? `Error ${res.status}`);
+        const raw = await res.text();
+        let message = '';
+        try {
+          message = JSON.parse(raw)?.error ?? '';
+        } catch {
+          message = raw.trim().slice(0, 200);
+        }
+
+        // Generation is gated behind sign-in so scrapers can't spend TTS
+        // credits. A bare "Unauthorized" reads like a provider key problem.
+        if (res.status === 401) {
+          setNeedsSignIn(true);
+          throw new Error('Not signed in — generating audio requires a signed-in session.');
+        }
+        if (res.status === 403) {
+          setNeedsSignIn(true);
+          throw new Error('This Google account is not in the allowed-emails list.');
+        }
+        throw new Error(message || `Request failed (HTTP ${res.status})`);
       }
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Failed to start generation');
@@ -233,7 +253,20 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
               </p>
             )}
 
-            {genError && <p className="text-xs text-red-400">{genError}</p>}
+            {genError && (
+              <div className="text-xs" style={{ color: '#f87171' }}>
+                <p className="break-words">{genError}</p>
+                {needsSignIn && (
+                  <Link
+                    href="/login"
+                    className="underline font-medium mt-1 inline-block"
+                    style={{ color: '#fca5a5' }}
+                  >
+                    Sign in →
+                  </Link>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">

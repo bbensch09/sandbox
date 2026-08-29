@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientSupabase } from '@/lib/supabase-client';
 import { Headphones } from 'lucide-react';
@@ -22,11 +22,24 @@ declare global {
 function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const error = params.get('error');
+  const [authError, setAuthError] = useState('');
   const buttonRef = useRef<HTMLDivElement>(null);
 
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  // Failures arrive from three places: the OAuth callback redirect, a rejected
+  // One Tap token exchange, or a deployment with no Google client id. Each used
+  // to fail silently or with a fixed string, leaving no way to tell them apart.
+  const shownError =
+    authError ||
+    (params.get('error')
+      ? params.get('detail') || 'Authentication failed. Please try again.'
+      : '') ||
+    (!clientId
+      ? 'NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set in this deployment — One Tap is unavailable. Use the button below.'
+      : '');
+
   useEffect(() => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) return;
 
     const supabase = createClientSupabase();
@@ -40,11 +53,17 @@ function LoginContent() {
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: async (response: { credential: string }) => {
+          setAuthError('');
           const { error } = await supabase.auth.signInWithIdToken({
             provider: 'google',
             token: response.credential,
           });
-          if (!error) router.push('/settings');
+          if (error) {
+            // Without this the One Tap button silently does nothing on failure.
+            setAuthError(`Supabase rejected the Google token: ${error.message}`);
+            return;
+          }
+          router.push('/settings');
         },
       });
 
@@ -62,14 +81,16 @@ function LoginContent() {
     return () => {
       if (document.head.contains(script)) document.head.removeChild(script);
     };
-  }, [router]);
+  }, [router, clientId]);
 
   const handleOAuthSignIn = async () => {
+    setAuthError('');
     const supabase = createClientSupabase();
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${location.origin}/auth/callback` },
     });
+    if (error) setAuthError(`Could not start Google sign-in: ${error.message}`);
   };
 
   return (
@@ -87,12 +108,12 @@ function LoginContent() {
           <p className="text-sm mt-1" style={{ color: '#64748b' }}>Sign in to access settings</p>
         </div>
 
-        {error && (
+        {shownError && (
           <p
-            className="text-sm rounded-xl px-4 py-3"
+            className="text-sm rounded-xl px-4 py-3 text-left break-words"
             style={{ color: '#f87171', backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}
           >
-            Authentication failed. Please try again.
+            {shownError}
           </p>
         )}
 

@@ -26,7 +26,20 @@ export async function GET(request: NextRequest) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`);
     }
+    return NextResponse.redirect(
+      `${origin}/login?error=auth_failed&detail=${encodeURIComponent(
+        `Code exchange failed: ${error.message}`,
+      )}`,
+    );
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_failed`);
+  // No code present — Google or Supabase usually explains why in the query
+  // string (redirect_uri_mismatch, access_denied, provider not enabled, …).
+  const providerError =
+    searchParams.get('error_description') ?? searchParams.get('error');
+  return NextResponse.redirect(
+    `${origin}/login?error=auth_failed${
+      providerError ? `&detail=${encodeURIComponent(providerError)}` : ''
+    }`,
+  );
 }
