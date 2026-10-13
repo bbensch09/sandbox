@@ -34,6 +34,7 @@ interface PlayerState {
   currentTime: number;
   duration: number;
   playbackRate: number;
+  queue: Episode[]; // "Up Next" — plays in order after the current episode ends
 }
 
 interface PlayerContextValue extends PlayerState {
@@ -42,6 +43,11 @@ interface PlayerContextValue extends PlayerState {
   seek: (seconds: number) => void;
   skip: (delta: number) => void;
   setRate: (rate: number) => void;
+  playNext: (episode: Episode) => void;
+  addToQueue: (episode: Episode) => void;
+  removeFromQueue: (episodeId: string) => void;
+  skipToNext: () => void;
+  setStopAfterEpisode: (stop: boolean) => void;
   audioRef: React.RefObject<HTMLAudioElement | null>;
 }
 
@@ -50,6 +56,8 @@ const PlayerContext = createContext<PlayerContextValue | null>(null);
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set by the "End of episode" sleep timer so the queue doesn't auto-advance.
+  const stopAfterEpisodeRef = useRef(false);
 
   const [state, setState] = useState<PlayerState>({
     episode: null,
@@ -57,6 +65,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     currentTime: 0,
     duration: 0,
     playbackRate: 1,
+    queue: [],
   });
 
   const savePosition = useCallback((episodeId: string, position: number) => {
@@ -72,7 +81,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const play = useCallback(
     (episode: Episode) => {
-      setState((s) => ({ ...s, episode, isPlaying: true }));
+      setState((s) => ({
+        ...s,
+        episode,
+        isPlaying: true,
+        queue: s.queue.filter((e) => e.id !== episode.id),
+      }));
       // Audio src is set via useEffect below
     },
     [],
@@ -114,6 +128,36 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, playbackRate: rate }));
   }, []);
 
+  // Queue helpers. With nothing loaded there is nothing to queue behind, so
+  // both start playback straight away (matches the iOS Podcasts app).
+  const enqueue = useCallback((episode: Episode, atFront: boolean) => {
+    setState((s) => {
+      if (!s.episode) return { ...s, episode, isPlaying: true };
+      if (s.episode.id === episode.id) return s;
+      const rest = s.queue.filter((e) => e.id !== episode.id);
+      return { ...s, queue: atFront ? [episode, ...rest] : [...rest, episode] };
+    });
+  }, []);
+
+  const playNext = useCallback((episode: Episode) => enqueue(episode, true), [enqueue]);
+  const addToQueue = useCallback((episode: Episode) => enqueue(episode, false), [enqueue]);
+
+  const removeFromQueue = useCallback((episodeId: string) => {
+    setState((s) => ({ ...s, queue: s.queue.filter((e) => e.id !== episodeId) }));
+  }, []);
+
+  const skipToNext = useCallback(() => {
+    setState((s) => {
+      if (s.queue.length === 0) return s;
+      const [next, ...rest] = s.queue;
+      return { ...s, episode: next, queue: rest, isPlaying: true, currentTime: 0 };
+    });
+  }, []);
+
+  const setStopAfterEpisode = useCallback((stop: boolean) => {
+    stopAfterEpisodeRef.current = stop;
+  }, []);
+
   // Mount audio element once
   useEffect(() => {
     const audio = new Audio();
@@ -129,7 +173,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setState((s) => ({ ...s, duration: audio.duration }));
     });
     audio.addEventListener('ended', () => {
-      setState((s) => ({ ...s, isPlaying: false, currentTime: 0 }));
+      setState((s) => {
+        // Advance to the next queued episode; the load effect below starts it.
+        if (s.queue.length > 0 && !stopAfterEpisodeRef.current) {
+          const [next, ...rest] = s.queue;
+          return { ...s, episode: next, queue: rest, isPlaying: true, currentTime: 0 };
+        }
+        return { ...s, isPlaying: false, currentTime: 0 };
+      });
     });
     audio.addEventListener('play', () =>
       setState((s) => ({ ...s, isPlaying: true })),
@@ -158,7 +209,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   return (
     <PlayerContext.Provider
-      value={{ ...state, play, togglePlay, seek, skip, setRate, audioRef }}
+      value={{
+        ...state,
+        play,
+        togglePlay,
+        seek,
+        skip,
+        setRate,
+        playNext,
+        addToQueue,
+        removeFromQueue,
+        skipToNext,
+        setStopAfterEpisode,
+        audioRef,
+      }}
     >
       {children}
     </PlayerContext.Provider>

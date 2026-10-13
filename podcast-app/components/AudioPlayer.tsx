@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePlayer } from './PlayerContext';
-import { Play, Pause, SkipBack, SkipForward, Moon, X } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Moon, X, ListOrdered } from 'lucide-react';
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds)) return '0:00';
@@ -35,17 +35,21 @@ interface SleepTimer {
 }
 
 export default function AudioPlayer() {
-  const { episode, isPlaying, currentTime, duration, playbackRate, togglePlay, skip, seek, setRate, audioRef } =
-    usePlayer();
+  const {
+    episode, isPlaying, currentTime, duration, playbackRate, togglePlay, skip, seek, setRate, audioRef,
+    queue, play, removeFromQueue, setStopAfterEpisode,
+  } = usePlayer();
 
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   const [sleepTimer, setSleepTimer] = useState<SleepTimer | null>(null);
   const [sleepCountdown, setSleepCountdown] = useState('');
   const sleepTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sleepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speedMenuRef = useRef<HTMLDivElement>(null);
   const sleepMenuRef = useRef<HTMLDivElement>(null);
+  const queueRef = useRef<HTMLDivElement>(null);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -57,6 +61,9 @@ export default function AudioPlayer() {
       }
       if (sleepMenuRef.current && !sleepMenuRef.current.contains(e.target as Node)) {
         setShowSleepMenu(false);
+      }
+      if (queueRef.current && !queueRef.current.contains(e.target as Node)) {
+        setShowQueue(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -114,6 +121,14 @@ export default function AudioPlayer() {
     }
   }, [isPlaying, currentTime, sleepTimer]);
 
+  // "End of episode" means stop there, not roll on into the queue
+  useEffect(() => {
+    setStopAfterEpisode(sleepTimer?.endsAt === 'episode');
+  }, [sleepTimer, setStopAfterEpisode]);
+
+  // Nothing left to show once the queue empties
+  const queueOpen = showQueue && queue.length > 0;
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -133,6 +148,45 @@ export default function AudioPlayer() {
         borderColor: 'rgb(51,65,85)',
       }}
     >
+      {/* Up Next panel */}
+      {queueOpen && (
+        <div
+          ref={queueRef}
+          className="absolute bottom-full left-0 right-0 mb-2 mx-auto max-w-2xl px-4"
+        >
+          <div
+            className="rounded-xl overflow-hidden shadow-xl"
+            style={{ backgroundColor: 'rgb(15,23,42)', border: '1px solid rgb(51,65,85)' }}
+          >
+            <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider" style={{ color: '#64748b' }}>
+              Up Next
+            </p>
+            <ul className="max-h-72 overflow-y-auto">
+              {queue.map((ep, i) => (
+                <li key={ep.id} className="flex items-center gap-2 pl-4 pr-2">
+                  <span className="text-xs tabular-nums w-4" style={{ color: '#64748b' }}>{i + 1}</span>
+                  <button
+                    onClick={() => { play(ep); setShowQueue(false); }}
+                    className="flex-1 min-w-0 text-left py-2.5 text-sm truncate"
+                    style={{ color: '#e2e8f0' }}
+                  >
+                    {ep.title}
+                  </button>
+                  <button
+                    onClick={() => removeFromQueue(ep.id)}
+                    className="p-2"
+                    style={{ color: '#64748b' }}
+                    aria-label={`Remove ${ep.title} from queue`}
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* Progress bar */}
       <div
         className="h-1 cursor-pointer"
@@ -152,7 +206,22 @@ export default function AudioPlayer() {
         {/* Title + source */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate leading-tight">{episode.title}</p>
-          {episode.source_url && (
+          {queue.length > 0 ? (
+            // Swaps in for the source line so the queue costs no control-row space
+            <button
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => { setShowQueue((v) => !v); setShowSpeedMenu(false); setShowSleepMenu(false); }}
+              className="flex items-center gap-1 max-w-full text-xs mt-0.5"
+              style={{ color: '#a78bfa' }}
+              aria-label={`Up next (${queue.length})`}
+            >
+              <ListOrdered size={12} className="flex-shrink-0" />
+              <span className="truncate">
+                Next: {queue[0].title}
+                {queue.length > 1 && ` +${queue.length - 1}`}
+              </span>
+            </button>
+          ) : episode.source_url && (
             <p className="text-xs truncate mt-0.5" style={{ color: '#94a3b8' }}>
               {new URL(episode.source_url).hostname.replace('www.', '')}
             </p>

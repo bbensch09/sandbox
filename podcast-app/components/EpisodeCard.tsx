@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2, Mail } from 'lucide-react';
+import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2, Mail, ListStart, ListEnd, ListX } from 'lucide-react';
 import { usePlayer, Episode } from './PlayerContext';
 
 const ELEVENLABS_COST_PER_CHAR = 0.00025; // $0.25 per 1000 chars
@@ -11,6 +12,8 @@ const INWORLD_COST_PER_CHAR = 0.000025;   // $0.025 per 1000 chars (TTS-2)
 
 const IN_PROGRESS = new Set(['pending', 'extracting', 'processing']);
 const TEN_MIN_MS = 10 * 60 * 1000;
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP_PX = 10; // finger drift allowed before it counts as a scroll
 
 function formatCost(chars: number, perChar: number): string {
   const cost = chars * perChar;
@@ -71,13 +74,19 @@ interface Props {
 }
 
 export default function EpisodeCard({ episode, onDelete }: Props) {
-  const { play, togglePlay, episode: current, isPlaying } = usePlayer();
+  const { play, togglePlay, episode: current, isPlaying, queue, playNext, addToQueue, removeFromQueue } =
+    usePlayer();
   const [deleting, setDeleting] = useState(false);
   const [generating, setGenerating] = useState<'elevenlabs' | 'openai' | 'inworld' | null>(null);
   const [genError, setGenError] = useState('');
   const [showFullError, setShowFullError] = useState(false);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  // The click that ends a long press must not also toggle playback.
+  const suppressClickRef = useRef(false);
 
   const isActive = current?.id === episode.id;
   const canPlay = episode.status === 'ready' && episode.audio_url;
@@ -99,7 +108,48 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
 
   const canRetry = episode.status === 'failed' || (inProgress && oldEnoughToRetry);
 
+  const queuePosition = queue.findIndex((e) => e.id === episode.id); // -1 if not queued
+
+  const cancelPress = () => {
+    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = null;
+    pressStartRef.current = null;
+  };
+
+  const openActions = () => {
+    suppressClickRef.current = true;
+    navigator.vibrate?.(10);
+    setShowActions(true);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!canPlay || e.button !== 0) return;
+    suppressClickRef.current = false;
+    pressStartRef.current = { x: e.clientX, y: e.clientY };
+    pressTimerRef.current = setTimeout(() => {
+      pressTimerRef.current = null;
+      openActions();
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const start = pressStartRef.current;
+    if (!start) return;
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > LONG_PRESS_SLOP_PX) cancelPress();
+  };
+
+  useEffect(() => cancelPress, []);
+
+  const runAction = (action: () => void) => {
+    action();
+    setShowActions(false);
+  };
+
   const handlePlay = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     if (!canPlay) return;
     if (isActive) {
       togglePlay();
@@ -172,7 +222,21 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
             ? 'bg-violet-950/40 border-violet-700'
             : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
         } ${canPlay ? 'cursor-pointer' : ''}`}
+      // Stop iOS from popping its text-selection callout on long press.
+      style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
       onClick={handlePlay}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onPointerLeave={cancelPress}
+      onContextMenu={(e) => {
+        // Right-click on desktop; also some Android browsers' long press.
+        if (!canPlay) return;
+        e.preventDefault();
+        cancelPress();
+        openActions();
+      }}
     >
       {/* Play button */}
       <button
@@ -216,6 +280,12 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
             </span>
           )}
           <StatusBadge status={episode.status} />
+          {queuePosition >= 0 && (
+            <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full" style={{ color: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.1)' }}>
+              <ListStart size={10} />
+              {queuePosition === 0 ? 'Up next' : `#${queuePosition + 1} in queue`}
+            </span>
+          )}
         </div>
 
         {episode.status === 'failed' && episode.error_message && (
@@ -327,6 +397,71 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
       >
         <Trash2 size={16} />
       </button>
+
+      {/* Long-press action sheet. Portaled out of the card so it can cover the
+          screen, but React still bubbles its events to the card — stop them. */}
+      {showActions && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+          onClick={(e) => { e.stopPropagation(); setShowActions(false); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => { e.stopPropagation(); e.preventDefault(); }}
+        >
+          <div
+            className="w-full max-w-md px-3 safe-bottom space-y-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'rgb(30,41,59)' }}>
+              <p className="px-4 py-3 text-xs text-center line-clamp-2" style={{ color: '#94a3b8' }}>
+                {episode.title}
+              </p>
+              {!isActive && (
+                <>
+                  <ActionRow icon={<ListStart size={18} />} label="Play Next" onClick={() => runAction(() => playNext(episode))} />
+                  {queuePosition >= 0 ? (
+                    <ActionRow icon={<ListX size={18} />} label="Remove from Queue" onClick={() => runAction(() => removeFromQueue(episode.id))} />
+                  ) : (
+                    <ActionRow icon={<ListEnd size={18} />} label="Add to Queue" onClick={() => runAction(() => addToQueue(episode))} />
+                  )}
+                </>
+              )}
+              <ActionRow icon={<Trash2 size={18} />} label="Delete" danger onClick={() => runAction(handleDelete)} />
+            </div>
+            <button
+              onClick={() => setShowActions(false)}
+              className="w-full py-3.5 rounded-2xl text-base font-semibold"
+              style={{ backgroundColor: 'rgb(30,41,59)', color: '#a78bfa' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
+  );
+}
+
+function ActionRow({
+  icon,
+  label,
+  onClick,
+  danger,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between px-4 py-3.5 text-base border-t"
+      style={{ color: danger ? '#f87171' : '#e2e8f0', borderColor: 'rgb(51,65,85)' }}
+    >
+      {label}
+      {icon}
+    </button>
   );
 }
