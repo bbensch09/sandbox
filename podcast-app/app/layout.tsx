@@ -38,7 +38,7 @@ export default function RootLayout({
         <PlayerProvider>
           {/* Top nav */}
           <header
-            className="sticky top-0 z-40 border-b"
+            className="sticky top-0 z-40 border-b safe-top"
             style={{
               backgroundColor: 'rgba(10,15,30,0.92)',
               backdropFilter: 'blur(12px)',
