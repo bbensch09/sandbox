@@ -18,7 +18,8 @@ export async function generateSpeechInworld(
       text,
       voiceId: voice,
       modelId: 'inworld-tts-2',
-      audioConfig: { audioEncoding: 'MP3' },
+      // 64kbps keeps long episodes under Supabase's 50 MB per-file limit.
+      audioConfig: { audioEncoding: 'MP3', bitRate: 64000 },
     }),
   });
 

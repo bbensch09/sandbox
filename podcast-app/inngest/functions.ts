@@ -260,6 +260,13 @@ export const generateEpisode = inngest.createFunction(
       );
 
       const combined = Buffer.concat(buffers);
+      const sizeMb = combined.length / (1024 * 1024);
+      if (sizeMb > 50) {
+        throw new Error(
+          `Audio is ${sizeMb.toFixed(0)} MB, over Supabase's 50 MB per-file upload limit. ` +
+            'Raise the limit in Supabase → Storage → Settings (Pro plan) or shorten the article.',
+        );
+      }
       const path = `${episodeId}.mp3`;
 
       const { error: uploadError } = await supabase.storage

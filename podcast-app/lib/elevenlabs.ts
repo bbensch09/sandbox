@@ -11,7 +11,9 @@ export async function generateSpeech(
   apiKey: string,
 ): Promise<Buffer> {
   const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    // 64kbps keeps long episodes under Supabase's 50 MB per-file upload limit
+    // (the 128kbps default overflows it at ~55 minutes of audio).
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`,
     {
       method: 'POST',
       headers: {
@@ -32,12 +34,23 @@ export async function generateSpeech(
   );
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`ElevenLabs error ${response.status}: ${error}`);
+    throw new Error(`ElevenLabs error ${response.status}: ${await readElevenLabsError(response)}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+// ElevenLabs wraps errors as {"detail":{"status":"...","message":"..."}};
+// pull out the human-readable message so it isn't lost behind raw JSON.
+async function readElevenLabsError(response: Response): Promise<string> {
+  const body = await response.text().catch(() => '');
+  try {
+    const detail = JSON.parse(body)?.detail;
+    if (typeof detail === 'string') return detail;
+    if (detail?.message) return detail.status ? `${detail.status}: ${detail.message}` : detail.message;
+  } catch {}
+  return body || 'no detail';
 }
 
 export async function fetchVoices(apiKey: string): Promise<Voice[]> {

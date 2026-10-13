@@ -75,6 +75,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [generating, setGenerating] = useState<'elevenlabs' | 'openai' | 'inworld' | null>(null);
   const [genError, setGenError] = useState('');
+  const [showFullError, setShowFullError] = useState(false);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
@@ -218,7 +219,13 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
         </div>
 
         {episode.status === 'failed' && episode.error_message && (
-          <p className="text-xs text-red-400 mt-1 line-clamp-1">{episode.error_message}</p>
+          <p
+            onClick={(e) => { e.stopPropagation(); setShowFullError((v) => !v); }}
+            className={`text-xs text-red-400 mt-1 cursor-pointer break-words ${showFullError ? 'select-text' : 'line-clamp-1'}`}
+            title="Tap to show the full error"
+          >
+            {episode.error_message}
+          </p>
         )}
 
         {/* Retry button */}
