@@ -17,3 +17,10 @@ body {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+
+/* iOS safe area inset for the sticky header — the home-screen app draws under
+   the status bar (black-translucent + viewport-fit=cover), so push the nav
+   below the clock/battery/notch. */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
