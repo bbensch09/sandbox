@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2, Mail, ListStart, ListEnd, ListX } from 'lucide-react';
+import { Play, Pause, Trash2, Clock, AlertCircle, Loader2, Zap, Sparkles, RotateCcw, Mic2, Mail, AlertTriangle, FileText, ListStart, ListEnd, ListX } from 'lucide-react';
 import { usePlayer, Episode } from './PlayerContext';
 
 const ELEVENLABS_COST_PER_CHAR = 0.00025; // $0.25 per 1000 chars
@@ -37,6 +37,14 @@ function formatDate(iso: string): string {
 
 function StatusBadge({ status }: { status: string }) {
   if (status === 'ready' || status === 'awaiting_confirmation') return null;
+  if (status === 'needs_review') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium text-amber-400 bg-amber-400/10">
+        <AlertTriangle size={12} />
+        Needs review
+      </span>
+    );
+  }
   const map: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
     pending: {
       label: 'Queued',
@@ -74,8 +82,10 @@ interface Props {
 }
 
 export default function EpisodeCard({ episode, onDelete }: Props) {
-  const { play, togglePlay, episode: current, isPlaying, queue, playNext, addToQueue, removeFromQueue } =
-    usePlayer();
+  const {
+    play, togglePlay, episode: current, isPlaying, queue, playNext, addToQueue, removeFromQueue,
+    resumePosition, currentTime, duration: activeDuration,
+  } = usePlayer();
   const [deleting, setDeleting] = useState(false);
   const [generating, setGenerating] = useState<'elevenlabs' | 'openai' | 'inworld' | null>(null);
   const [genError, setGenError] = useState('');
@@ -91,6 +101,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   const isActive = current?.id === episode.id;
   const canPlay = episode.status === 'ready' && episode.audio_url;
   const awaitingConfirmation = episode.status === 'awaiting_confirmation';
+  const needsReview = episode.status === 'needs_review';
 
   const inProgress = IN_PROGRESS.has(episode.status);
   const [oldEnoughToRetry, setOldEnoughToRetry] = useState(false);
@@ -107,6 +118,13 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   }, [inProgress, episode.created_at]);
 
   const canRetry = episode.status === 'failed' || (inProgress && oldEnoughToRetry);
+
+  // Where this episode was left off. duration_seconds is only an estimate from
+  // word count, so prefer the real duration once the file is loaded.
+  const listened = isActive ? currentTime : canPlay ? resumePosition(episode) : 0;
+  const totalSeconds = (isActive && activeDuration > 0 ? activeDuration : episode.duration_seconds) ?? 0;
+  const inProgressListen = listened > 5 && totalSeconds > 0;
+  const minutesLeft = Math.max(1, Math.round((totalSeconds - listened) / 60));
 
   const queuePosition = queue.findIndex((e) => e.id === episode.id); // -1 if not queued
 
@@ -216,7 +234,7 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
   return (
     <div
       className={`group flex items-start gap-4 p-4 rounded-xl border transition-colors
-        ${awaitingConfirmation
+        ${awaitingConfirmation || needsReview
           ? 'bg-amber-950/20 border-amber-700/50'
           : isActive
             ? 'bg-violet-950/40 border-violet-700'
@@ -257,15 +275,22 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
       {/* Meta */}
       <div className="flex-1 min-w-0">
         <p className="font-medium text-white leading-snug line-clamp-2">{episode.title}</p>
+        {inProgressListen && (
+          <div className="h-1 mt-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgb(51,65,85)' }}>
+            <div className="h-full rounded-full" style={{ width: `${Math.min(100, (listened / totalSeconds) * 100)}%`, backgroundColor: '#7c3aed' }} />
+          </div>
+        )}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {episode.source_url && (
             <span className="text-xs text-slate-400">
               {new URL(episode.source_url).hostname.replace('www.', '')}
             </span>
           )}
-          {episode.duration_seconds && (
+          {inProgressListen ? (
+            <span className="text-xs" style={{ color: '#a78bfa' }}>{minutesLeft} min left</span>
+          ) : episode.duration_seconds ? (
             <span className="text-xs text-slate-500">{formatDuration(episode.duration_seconds)}</span>
-          )}
+          ) : null}
           <span className="text-xs text-slate-600">{formatDate(episode.created_at)}</span>
           {episode.is_interview && (
             <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full" style={{ color: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.1)' }}>
@@ -311,6 +336,27 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
           </button>
         )}
 
+        {/* Transcript check flagged this one — read it before spending credits */}
+        {needsReview && (
+          <div
+            className="mt-3 rounded-xl p-3 space-y-2"
+            onClick={(e) => e.stopPropagation()}
+            style={{ backgroundColor: 'rgba(0,0,0,0.3)', border: '1px solid rgba(251,191,36,0.3)' }}
+          >
+            <ul className="text-xs space-y-1 list-disc pl-4" style={{ color: '#fde68a' }}>
+              {(episode.review_notes ?? []).slice(0, 2).map((n) => <li key={n} className="line-clamp-2">{n}</li>)}
+            </ul>
+            <Link
+              href={`/episodes/${episode.id}`}
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-medium"
+              style={{ backgroundColor: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)' }}
+            >
+              <FileText size={12} />
+              Review text before generating
+            </Link>
+          </div>
+        )}
+
         {/* Cost confirmation UI */}
         {awaitingConfirmation && (
           <div
@@ -327,6 +373,14 @@ export default function EpisodeCard({ episode, onDelete }: Props) {
                   ? ` · ${episode.speaker_count} speaker${episode.speaker_count !== 1 ? 's' : ''}`
                   : ''}
               </p>
+              <Link
+                href={`/episodes/${episode.id}`}
+                className="ml-auto inline-flex items-center gap-1 text-xs underline-offset-2 hover:underline"
+                style={{ color: '#94a3b8' }}
+              >
+                <FileText size={11} />
+                Preview text
+              </Link>
             </div>
 
             {/* Warning for >4 speakers */}

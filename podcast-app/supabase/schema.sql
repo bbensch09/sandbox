@@ -61,3 +61,10 @@ ALTER TABLE episodes
 ALTER TABLE settings
   ADD COLUMN IF NOT EXISTS email_auto_convert_provider text DEFAULT 'inworld',
   ADD COLUMN IF NOT EXISTS email_auto_convert_max_chars integer DEFAULT 40000;
+
+-- ── Transcript review (cleanup pass + "needs review" check) ──
+ALTER TABLE episodes
+  ADD COLUMN IF NOT EXISTS original_content text,
+  ADD COLUMN IF NOT EXISTS removed_content jsonb,
+  ADD COLUMN IF NOT EXISTS review_notes jsonb,
+  ADD COLUMN IF NOT EXISTS unrelated_share real;

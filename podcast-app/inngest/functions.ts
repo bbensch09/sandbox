@@ -5,6 +5,14 @@ import { generateSpeech, chunkText, preprocessForTTS } from '@/lib/elevenlabs';
 import { generateSpeechOpenAI } from '@/lib/openai-tts';
 import { generateSpeechInworld } from '@/lib/inworld-tts';
 import { parseTranscript, getInterviewVoice } from '@/lib/transcript';
+import {
+  ruleClean,
+  batchParagraphs,
+  judgeBatch,
+  finalizeTranscript,
+  textLength,
+  type JudgeResult,
+} from '@/lib/cleanup';
 
 type FailureEvent = { data?: { event?: { data?: { episodeId?: string } } } };
 
@@ -19,6 +27,28 @@ async function markFailed(episodeId: string, message: string) {
     .from('episodes')
     .update({ status: 'failed', error_message: message, updated_at: new Date().toISOString() })
     .eq('id', episodeId);
+}
+
+/**
+ * Write the extraction result. The review columns come from a migration that
+ * may not have been run yet — rather than failing every episode, fall back to
+ * the core columns (and skip review, since there'd be nowhere to show it).
+ */
+async function updateEpisodeWithReview(
+  episodeId: string,
+  core: Record<string, unknown>,
+  review: Record<string, unknown>,
+) {
+  const supabase = createServerSupabase();
+  const { error } = await supabase.from('episodes').update({ ...core, ...review }).eq('id', episodeId);
+  if (!error) return;
+
+  const missingColumn = error.code === 'PGRST204' || /column/i.test(error.message);
+  if (!missingColumn) throw new Error(`Saving transcript failed: ${error.message}`);
+
+  const fallback = { ...core, status: core.status === 'needs_review' ? 'awaiting_confirmation' : core.status };
+  const retry = await supabase.from('episodes').update(fallback).eq('id', episodeId);
+  if (retry.error) throw new Error(`Saving transcript failed: ${retry.error.message}`);
 }
 
 // ── Step 1: Extract article content ────────────────────────────────────────
@@ -54,7 +84,7 @@ export const extractEpisode = inngest.createFunction(
         .eq('id', episodeId);
     });
 
-    const { characterCount } = await step.run('extract-content', async () => {
+    const raw = await step.run('extract-content', async () => {
       let content: string = episode.content as string;
       let title: string = episode.title as string;
 
@@ -64,31 +94,99 @@ export const extractEpisode = inngest.createFunction(
         content = extracted.content;
         if (title === 'Untitled') title = extracted.title;
       }
+      return { content, title };
+    });
 
-      const cleanText = preprocessForTTS(content);
+    // A retry re-runs this job; start from the untouched text, not text an
+    // earlier pass (or a manual edit) already trimmed.
+    const source = (episode.original_content as string | null) || raw.content;
+
+    const ruled = await step.run('clean-rules', async () =>
+      ruleClean(source, { isInterview: !!episode.is_interview }),
+    );
+
+    const apiKey = await step.run('fetch-judge-key', async () => {
+      const { data } = await supabase
+        .from('settings')
+        .select('openai_api_key')
+        .eq('id', 'singleton')
+        .single();
+      return (data?.openai_api_key as string | null) ?? null;
+    });
+
+    // One step per batch keeps each LLM call inside the function time limit.
+    const judged: JudgeResult[] = [];
+    // Without an OpenAI key only the rule pass runs; that alone isn't a reason to flag.
+    let judgeError: string | null = null;
+    if (apiKey) {
+      const batches = batchParagraphs(ruled.paragraphs);
+      for (let b = 0; b < batches.length && !judgeError; b++) {
+        const result = await step.run(`judge-batch-${b}`, async () => {
+          try {
+            return {
+              ok: true as const,
+              value: await judgeBatch({
+                apiKey,
+                title: raw.title,
+                paragraphs: ruled.paragraphs,
+                indices: batches[b],
+                batchNumber: b + 1,
+                batchCount: batches.length,
+              }),
+            };
+          } catch (err) {
+            // Never lose the episode over the checker — hold it for review instead.
+            return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+          }
+        });
+        if (result.ok) judged.push(result.value);
+        else judgeError = result.error;
+      }
+    }
+
+    const { characterCount, needsReview } = await step.run('finalize-transcript', async () => {
+      const prepared = finalizeTranscript({
+        originalLength: textLength(source),
+        paragraphs: ruled.paragraphs,
+        ruleRemoved: ruled.removed,
+        judged,
+        judgeError,
+        fromUrl: !episode.content && !!episode.source_url,
+      });
+
+      const cleanText = preprocessForTTS(prepared.content);
       const characterCount = cleanText.length;
+      const needsReview = prepared.reviewNotes.length > 0;
 
       // For interview transcripts, detect speaker count
       let speakerCount: number | null = null;
       if (episode.is_interview) {
-        const transcript = parseTranscript(content);
-        speakerCount = transcript.speakerCount;
+        speakerCount = parseTranscript(prepared.content).speakerCount;
       }
 
-      await supabase
-        .from('episodes')
-        .update({
-          title,
-          content,
+      await updateEpisodeWithReview(
+        episodeId,
+        {
+          title: raw.title,
+          content: prepared.content,
           character_count: characterCount,
           ...(speakerCount !== null ? { speaker_count: speakerCount } : {}),
-          status: 'awaiting_confirmation',
+          status: needsReview ? 'needs_review' : 'awaiting_confirmation',
           updated_at: new Date().toISOString(),
-        })
-        .eq('id', episodeId);
+        },
+        {
+          original_content: source,
+          removed_content: prepared.removed,
+          review_notes: prepared.reviewNotes,
+          unrelated_share: prepared.unrelatedShare,
+        },
+      );
 
-      return { characterCount };
+      return { characterCount, needsReview };
     });
+
+    // A flagged transcript waits for a human even if it was emailed in.
+    if (needsReview) return { episodeId, status: 'needs_review' };
 
     // Emailed articles convert themselves, but only under the configured
     // ceiling — anything larger waits for a human to approve the spend.
