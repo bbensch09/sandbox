@@ -6,7 +6,9 @@ Turns articles into podcast episodes: extract → estimate cost → generate wit
 Inworld, OpenAI, or ElevenLabs → play as a PWA.
 
 - Database migrations: `supabase/schema.sql` (run in the Supabase SQL editor)
-- Forward-an-email-to-subscribe setup: [`email-worker/README.md`](./email-worker/README.md)
+- Forward-an-email-to-subscribe setup: [`email-gmail/README.md`](./email-gmail/README.md)
+  (free, uses a Gmail account) or [`email-worker/README.md`](./email-worker/README.md)
+  (custom domain on Cloudflare)
 
 Environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `INNGEST_EVENT_KEY`,
