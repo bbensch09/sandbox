@@ -303,6 +303,9 @@ export default function SettingsPage() {
         <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#64748b' }}>
           OpenAI TTS
         </p>
+        <p className="text-xs -mt-3" style={{ color: '#64748b' }}>
+          Also powers the transcript check, which cuts filler and flags bad extractions for review before audio is generated.
+        </p>
 
         <div>
           <div className="flex items-center justify-between mb-1.5">

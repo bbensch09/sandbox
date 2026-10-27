@@ -26,7 +26,14 @@ export interface Episode {
   error_message?: string;
   listen_position_seconds: number;
   created_at: string;
+  updated_at?: string;
+  content?: string;
+  original_content?: string | null;
+  removed_content?: { text: string; reason: string }[] | null;
+  review_notes?: string[] | null;
+  unrelated_share?: number | null;
 }
+
 
 interface PlayerState {
   episode: Episode | null;
@@ -48,16 +55,72 @@ interface PlayerContextValue extends PlayerState {
   removeFromQueue: (episodeId: string) => void;
   skipToNext: () => void;
   setStopAfterEpisode: (stop: boolean) => void;
+  /** Where playback of this episode would resume, in seconds. */
+  resumePosition: (episode: Episode) => number;
   audioRef: React.RefObject<HTMLAudioElement | null>;
+}
+
+export const SKIP_SECONDS = 15;
+
+/** Server writes while playing; the phone's own copy is written far more often. */
+const SERVER_SAVE_INTERVAL_MS = 15_000;
+const LOCAL_SAVE_INTERVAL_MS = 2_000;
+/** Stopping this close to the end counts as finished — start over next time. */
+const FINISHED_MARGIN_S = 10;
+
+const POSITIONS_KEY = 'articlecast:positions';
+type SavedPosition = { t: number; at: number };
+
+function readPositions(): Record<string, SavedPosition> {
+  try {
+    return JSON.parse(localStorage.getItem(POSITIONS_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writePosition(id: string, t: number) {
+  try {
+    const all = readPositions();
+    all[id] = { t, at: Date.now() };
+    localStorage.setItem(POSITIONS_KEY, JSON.stringify(all));
+  } catch {
+    // Private mode / storage full — the server copy still exists.
+  }
+}
+
+function saveToServer(id: string, t: number) {
+  // keepalive lets the request finish when the page is being closed.
+  fetch(`/api/episodes/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ listen_position_seconds: t }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/** Saved position, preferring whichever copy is newer: this phone's, or the
+ *  server's (which may have been written from another device). */
+function storedPosition(episode: Episode): number {
+  const local = readPositions()[episode.id];
+  const serverAt = episode.updated_at ? Date.parse(episode.updated_at) : 0;
+  if (local && local.at >= serverAt) return local.t;
+  return episode.listen_position_seconds || 0;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set by the "End of episode" sleep timer so the queue doesn't auto-advance.
   const stopAfterEpisodeRef = useRef(false);
+  // Mirrors of state for event handlers registered once at mount.
+  const episodeRef = useRef<Episode | null>(null);
+  const queueRef = useRef<Episode[]>([]);
+  const lastSaveRef = useRef({ local: 0, server: 0 });
+  // False while a new file loads: its currentTime (0) isn't a real position yet,
+  // and the `pause` fired by swapping src would otherwise save 0 over it.
+  const positionReadyRef = useRef(false);
 
   const [state, setState] = useState<PlayerState>({
     episode: null,
@@ -68,15 +131,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queue: [],
   });
 
-  const savePosition = useCallback((episodeId: string, position: number) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      fetch(`/api/episodes/${episodeId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listen_position_seconds: position }),
-      }).catch(() => {});
-    }, 5000);
+  useEffect(() => {
+    episodeRef.current = state.episode;
+    queueRef.current = state.queue;
+  }, [state.episode, state.queue]);
+
+  /** Save where the current episode is, now. */
+  const flushPosition = useCallback(() => {
+    const audio = audioRef.current;
+    const ep = episodeRef.current;
+    if (!audio || !ep || !positionReadyRef.current) return;
+    const finished = audio.duration > 0 && audio.currentTime >= audio.duration - FINISHED_MARGIN_S;
+    const t = finished ? 0 : audio.currentTime;
+    writePosition(ep.id, t);
+    saveToServer(ep.id, t);
+    lastSaveRef.current = { local: Date.now(), server: Date.now() };
+  }, []);
+
+  const resumePosition = useCallback((episode: Episode) => {
+    if (episodeRef.current?.id === episode.id && audioRef.current && positionReadyRef.current) {
+      return audioRef.current.currentTime;
+    }
+    return storedPosition(episode);
   }, []);
 
   const play = useCallback(
@@ -95,13 +171,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (audio.paused) {
-      audio.play();
-      setState((s) => ({ ...s, isPlaying: true }));
-    } else {
-      audio.pause();
-      setState((s) => ({ ...s, isPlaying: false }));
-    }
+    if (audio.paused) audio.play().catch(() => {});
+    else audio.pause();
   }, []);
 
   const seek = useCallback(
@@ -164,15 +235,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     audioRef.current = audio;
 
     audio.addEventListener('timeupdate', () => {
-      setState((s) => {
-        if (s.episode) savePosition(s.episode.id, audio.currentTime);
-        return { ...s, currentTime: audio.currentTime };
-      });
+      setState((s) => ({ ...s, currentTime: audio.currentTime }));
+
+      const ep = episodeRef.current;
+      if (!ep || audio.paused || !positionReadyRef.current) return;
+      const now = Date.now();
+      if (now - lastSaveRef.current.local > LOCAL_SAVE_INTERVAL_MS) {
+        writePosition(ep.id, audio.currentTime);
+        lastSaveRef.current.local = now;
+      }
+      if (now - lastSaveRef.current.server > SERVER_SAVE_INTERVAL_MS) {
+        saveToServer(ep.id, audio.currentTime);
+        lastSaveRef.current.server = now;
+      }
     });
     audio.addEventListener('durationchange', () => {
       setState((s) => ({ ...s, duration: audio.duration }));
     });
     audio.addEventListener('ended', () => {
+      flushPosition(); // records 0 — a finished episode starts over next time
       setState((s) => {
         // Advance to the next queued episode; the load effect below starts it.
         if (s.queue.length > 0 && !stopAfterEpisodeRef.current) {
@@ -185,27 +266,82 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     audio.addEventListener('play', () =>
       setState((s) => ({ ...s, isPlaying: true })),
     );
-    audio.addEventListener('pause', () =>
-      setState((s) => ({ ...s, isPlaying: false })),
-    );
+    audio.addEventListener('pause', () => {
+      setState((s) => ({ ...s, isPlaying: false }));
+      if (!audio.ended) flushPosition();
+    });
+
+    // The app can be swiped away at any moment — save on the way out.
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flushPosition();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', flushPosition);
 
     return () => {
       audio.pause();
-      clearTimeout(saveTimerRef.current ?? undefined);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', flushPosition);
     };
-  }, [savePosition]);
+  }, [flushPosition]);
 
-  // When episode changes, load it
+  // When episode changes, save where the old one was, then load the new one
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !state.episode?.audio_url) return;
+    const episode = state.episode;
+    if (!audio || !episode?.audio_url) return;
 
-    audio.src = state.episode.audio_url;
-    audio.currentTime = state.episode.listen_position_seconds || 0;
+    // Not resumePosition(): by now the audio element still holds the previous
+    // episode's time, which must not leak into this one.
+    const start = storedPosition(episode);
+    positionReadyRef.current = false;
+    audio.src = episode.audio_url;
     audio.playbackRate = state.playbackRate;
+    // Setting currentTime before metadata loads is ignored on iOS Safari.
+    const applyStart = () => {
+      if (start > 0 && !(audio.duration > 0 && start >= audio.duration - FINISHED_MARGIN_S)) {
+        audio.currentTime = start;
+      }
+      positionReadyRef.current = true;
+      lastSaveRef.current = { local: Date.now(), server: Date.now() };
+    };
+    audio.addEventListener('loadedmetadata', applyStart, { once: true });
     audio.play().catch(() => {});
+    return () => {
+      audio.removeEventListener('loadedmetadata', applyStart);
+      // Runs before the next episode loads (and still points at this one).
+      flushPosition();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.episode?.id]);
+
+  // Lock screen, Control Center, CarPlay and headphone buttons
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !state.episode) return;
+    const ep = state.episode;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: ep.title,
+      artist: ep.source_url ? new URL(ep.source_url).hostname.replace('www.', '') : 'ArticleCast',
+      album: 'ArticleCast',
+      artwork: [{ src: '/icon-512.png', sizes: '512x512', type: 'image/png' }],
+    });
+    const handlers: [MediaSessionAction, MediaSessionActionHandler | null][] = [
+      ['play', () => { audioRef.current?.play().catch(() => {}); }],
+      ['pause', () => audioRef.current?.pause()],
+      ['seekbackward', (d) => skip(-(d.seekOffset ?? SKIP_SECONDS))],
+      ['seekforward', (d) => skip(d.seekOffset ?? SKIP_SECONDS)],
+      ['seekto', (d) => { if (d.seekTime != null) seek(d.seekTime); }],
+      // Without a queue, leave "next" unset so iOS shows the ±15s buttons.
+      ['nexttrack', state.queue.length > 0 ? () => skipToNext() : null],
+    ];
+    for (const [action, handler] of handlers) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch {
+        // Action not supported on this browser
+      }
+    }
+  }, [state.episode, state.queue.length, skip, seek, skipToNext]);
 
   return (
     <PlayerContext.Provider
@@ -221,6 +357,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         removeFromQueue,
         skipToNext,
         setStopAfterEpisode,
+        resumePosition,
         audioRef,
       }}
     >
